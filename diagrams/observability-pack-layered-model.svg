@@ -16,7 +16,7 @@
     <text x="20" y="92" font-size="11" font-weight="700" fill="#6B6B6B">INPUTS</text>
     <g>
       <rect x="60"  y="100" width="160" height="42" rx="6" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.2"/>
-      <text x="140" y="120" text-anchor="middle" font-size="13" font-weight="600" fill="#1F3A5F">OLA</text>
+      <text x="140" y="120" text-anchor="middle" font-size="13" font-weight="600" fill="#1F3A5F">SLA</text>
       <text x="140" y="135" text-anchor="middle" font-size="10" fill="#6B6B6B">Operating-level agreements</text>
       <rect x="240" y="100" width="160" height="42" rx="6" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.2"/>
       <text x="320" y="120" text-anchor="middle" font-size="13" font-weight="600" fill="#1F3A5F">Client Needs</text>

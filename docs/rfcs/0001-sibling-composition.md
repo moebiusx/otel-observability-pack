@@ -16,7 +16,7 @@
 
 v1.1 of the ObservabilityPack standard supports *vertical* composition: a service pack inherits from one or more platform-level base packs via `metadata.imports`, with later imports overriding earlier ones. This RFC proposes *horizontal* composition: multiple sibling packs that together describe a single service's observability surface, each owned by a different team and contributing a disjoint slice of the spec.
 
-The target use case is a service whose observability is genuinely co-owned by multiple parties — a contractually-driven slice (OLA, audit, governance), a platform-driven slice (vendor / infrastructure telemetry), and an application-driven slice (per-application SLIs and alerts). v1.1 forces these into a single file with mixed ownership; v1.2 should let each owner ship their slice independently while the operator composes them into one effective pack at apply time.
+The target use case is a service whose observability is genuinely co-owned by multiple parties — a contractually-driven slice (SLA, audit, governance), a platform-driven slice (vendor / infrastructure telemetry), and an application-driven slice (per-application SLIs and alerts). v1.1 forces these into a single file with mixed ownership; v1.2 should let each owner ship their slice independently while the operator composes them into one effective pack at apply time.
 
 The proposal is intentionally additive. `metadata.imports` keeps its existing semantics. A new `metadata.composes` block opts a pack into sibling composition. Packs that don't use `composes` are unaffected.
 
@@ -30,7 +30,7 @@ A real-world inventory of a tier-1 service often splits naturally along three ax
 
 | Slice | Owner | Driving force |
 |---|---|---|
-| OLA / contractual | Risk & compliance, KrystalineX Platform / incident management | External SLA, regulatory reporting |
+| SLA / contractual | Risk & compliance, KrystalineX Platform / incident management | External SLA, regulatory reporting |
 | Platform / BAU | Platform engineering, observability infrastructure | Vendor telemetry, infrastructure health |
 | Application / client | Application team | Per-feature SLIs, business-domain alerts |
 
@@ -80,7 +80,7 @@ metadata:
   binding: otel-elastic-prometheus-grafana
   owners: [team-platform-sre]              # owners of the AGGREGATION, not the contents
   composes:
-    - ref: ./kx-exchange-ola.pack.yaml
+    - ref: ./kx-exchange-sla.pack.yaml
     - ref: ./kx-exchange-bau.pack.yaml
     - ref: ./kx-exchange-client.pack.yaml
   bindings:
@@ -93,11 +93,11 @@ spec: {}                                    # nothing — siblings provide it
 Each sibling is itself a full pack manifest, but scoped to the slice its owner is accountable for, and declares `metadata.contributes` listing the sections it owns:
 
 ```yaml
-# kx-exchange-ola.pack.yaml
+# kx-exchange-sla.pack.yaml
 apiVersion: observability.platform/v1
 kind: ObservabilityPack
 metadata:
-  name: kx-exchange-ola
+  name: kx-exchange-sla
   version: 2.4.1
   owners: [team-krystalinex-platform, team-compliance]
   contributes:
@@ -105,9 +105,9 @@ metadata:
     - slos
     - dashboards
     - alerting.routes:           # nested-section ownership
-        match: { source: ola }
+        match: { source: sla }
     - policy.burn_rate_alerts:
-        match: { tag: ola }
+        match: { tag: sla }
     - validation.governance      # the G 01, G 02 audit-evidence items
   bindings:
     service: kx-exchange              # MUST match the aggregator's service
@@ -115,15 +115,15 @@ metadata:
     criticality: tier-1
 spec:
   slis:
-    - id: ola.service_availability_composite
+    - id: sla.service_availability_composite
       type: ratio
       # ...
   slos:
-    - id: ola.error_budget_99_95
-      sli: ola.service_availability_composite
+    - id: sla.error_budget_99_95
+      sli: sla.service_availability_composite
       objective: 0.9995
       # ...
-  # ... etc, only the OLA-owned content
+  # ... etc, only the SLA-owned content
 ```
 
 ### 3.2 ID namespacing
@@ -146,14 +146,14 @@ policy:
     - slo: bau.broker_availability_99_999
       windows: [...]
 
-# inside kx-exchange-ola.pack.yaml — references a BAU SLI (cross-sibling, allowed)
+# inside kx-exchange-sla.pack.yaml — references a BAU SLI (cross-sibling, allowed)
 slos:
-  - id: ola.error_budget_99_95
+  - id: sla.error_budget_99_95
     sli: bau.broker_availability_ratio    # explicit cross-sibling ref
     # ...
 ```
 
-Cross-sibling references are *allowed but must be acyclic*. The composer builds a dependency graph; cycles are a CI error. This permits the natural shape where OLA-defined SLOs reference BAU-collected SLIs.
+Cross-sibling references are *allowed but must be acyclic*. The composer builds a dependency graph; cycles are a CI error. This permits the natural shape where SLA-defined SLOs reference BAU-collected SLIs.
 
 ### 3.3 Merge semantics
 
@@ -175,7 +175,7 @@ Some sections are inherently singletons — there's exactly one `metadata.bindin
 metadata:
   name: kx-exchange
   composes:
-    - ref: ./kx-exchange-ola.pack.yaml
+    - ref: ./kx-exchange-sla.pack.yaml
     - ref: ./kx-exchange-bau.pack.yaml
     - ref: ./kx-exchange-client.pack.yaml
   resolution:
@@ -184,7 +184,7 @@ metadata:
     spec.pipelines.receivers:   merge_by_name               # union; conflict on name = error
     spec.pipelines.exporters:   exclusive_to: kx-exchange-bau
     spec.alerting.routes:       partition_by_severity       # each route's severity is the partition key; no two siblings may declare the same severity
-    spec.baselines:             exclusive_to: kx-exchange-ola    # OLA owns the contractual targets
+    spec.baselines:             exclusive_to: kx-exchange-sla    # SLA owns the contractual targets
 ```
 
 Three resolution modes in v1.2:
@@ -202,7 +202,7 @@ Each sibling has its own SemVer. The aggregator pins sibling versions:
 ```yaml
 metadata:
   composes:
-    - { ref: ./kx-exchange-ola.pack.yaml,    pin: ~2.4.0 }
+    - { ref: ./kx-exchange-sla.pack.yaml,    pin: ~2.4.0 }
     - { ref: ./kx-exchange-bau.pack.yaml,    pin: ~3.1.0 }
     - { ref: ./kx-exchange-client.pack.yaml, pin: ~1.0.0 }
 ```
@@ -215,7 +215,7 @@ A sibling's *contributes list* is part of its public contract — adding a new c
 
 The composed effective pack is what the conformance scanner evaluates. Each MUST clause is satisfied by *the composition*, not by any individual sibling. This means:
 
-- The L5 chaos requirement for tier-1 can be satisfied by the BAU sibling (which owns validation), even though the OLA sibling owns no validation artefacts.
+- The L5 chaos requirement for tier-1 can be satisfied by the BAU sibling (which owns validation), even though the SLA sibling owns no validation artefacts.
 - The L4 self-healing requirement can be satisfied by the client sibling, even if BAU has no remediation.
 
 A sibling's solo conformance score is undefined; only the aggregator has one. The conformance dashboard surfaces *the aggregator* with annotations indicating which sibling contributed which satisfied clauses, so each owner can see their footprint.
@@ -238,7 +238,7 @@ packtool lint --sibling <sibling.pack.yaml>  → validates a single sibling in i
 ```
 observability/
 ├── kx-exchange.pack.yaml                  # aggregator, owned by team-platform-sre
-├── kx-exchange-ola.pack.yaml              # owned by team-krystalinex-platform + team-compliance
+├── kx-exchange-sla.pack.yaml              # owned by team-krystalinex-platform + team-compliance
 ├── kx-exchange-bau.pack.yaml              # owned by team-platform-sre
 └── kx-exchange-client.pack.yaml           # owned by team-app-payments
 ```
@@ -247,14 +247,14 @@ With `CODEOWNERS`:
 
 ```
 observability/kx-exchange.pack.yaml           @team-platform-sre
-observability/kx-exchange-ola.pack.yaml       @team-krystalinex-platform @team-compliance
+observability/kx-exchange-sla.pack.yaml       @team-krystalinex-platform @team-compliance
 observability/kx-exchange-bau.pack.yaml       @team-platform-sre
 observability/kx-exchange-client.pack.yaml    @team-app-payments
 ```
 
 Contribution map:
 
-| Section | OLA sibling | BAU sibling | Client sibling |
+| Section | SLA sibling | BAU sibling | Client sibling |
 |---|---|---|---|
 | `spec.otel` | — | ✓ exclusive | — |
 | `spec.slis` | 1 (composite) | 2 (broker, HA) | many |
@@ -264,10 +264,10 @@ Contribution map:
 | `spec.storage` | — | ✓ exclusive | — |
 | `spec.queries.recording_rules` | — | core SLI/SLO rules | SCM queue rules |
 | `spec.dashboards` | D EXT (audit) | Repo + D INT + D APP | SCM dashboards |
-| `spec.policy.burn_rate_alerts` | ola.external_99_95 | bau.broker_burn_* | client.* |
+| `spec.policy.burn_rate_alerts` | sla.external_99_95 | bau.broker_burn_* | client.* |
 | `spec.alerting.routes` | SEV1→KrystalineX Platform + IM | SEV1→kx-exchange On Call | SEV1/2/3→App Team |
 | `spec.remediation` | — | — | (future) |
-| `spec.baselines` | ✓ exclusive (OLA-driven targets) | — | — |
+| `spec.baselines` | ✓ exclusive (SLA-driven targets) | — | — |
 | `spec.validation` | — | (future chaos) | synthetic probes |
 | Governance evidence | G 01, G 02 | G 03, G 04 | SCM 01 (scrape config) |
 
@@ -337,7 +337,7 @@ Use a Kustomize-like mechanism where each "sibling" is a strategic merge patch o
 
 - **Cognitive load.** Engineers must understand both `imports` (vertical, overlay) and `composes` (horizontal, disjoint union). Documentation cost is real.
 - **Operational complexity.** The operator now resolves composition before validation. A failed compose blocks the entire service's reconcile; the diagnostic must clearly point at the offending sibling.
-- **Cross-sibling refactors are harder.** Moving an SLI from BAU to OLA changes its namespaced ID, which means every downstream reference must move with it. The tooling needs a `rename` command.
+- **Cross-sibling refactors are harder.** Moving an SLI from BAU to SLA changes its namespaced ID, which means every downstream reference must move with it. The tooling needs a `rename` command.
 - **Conformance attribution.** "Which sibling caused the tier-1 failure?" needs to be obvious in the conformance dashboard. Otherwise teams blame each other.
 - **The aggregator is a single point of merge.** If the aggregator owner is on vacation, sibling teams can't independently advance pins. Mitigation: aggregator co-ownership by all sibling owners.
 
@@ -348,7 +348,7 @@ Use a Kustomize-like mechanism where each "sibling" is a strategic merge patch o
 - **Should siblings declare their own `imports`?** Tentative yes — a sibling can pull in platform defaults independently. But the composer must dedup transitively imported items.
 - **Is `validation.governance` a real section, or is governance evidence always synthesised from other sections?** This RFC assumes the former for the contributes-list example, but the underlying spec doesn't have an explicit `governance` block. Either way works; the contribute syntax should generalise to whatever section name lands.
 - **Do we need a `metadata.contributes.exclusive` flag** to mark a sibling as the *only* permitted contributor to a section, separately from the `resolution` block on the aggregator? Currently the same constraint can be expressed in two places. Pick one.
-- **What about partial / conditional contribution?** "OLA owns dashboards in `prod` only" — does composition need environment-aware partitioning, or is that better handled by separate aggregators per environment? Recommend the latter.
+- **What about partial / conditional contribution?** "SLA owns dashboards in `prod` only" — does composition need environment-aware partitioning, or is that better handled by separate aggregators per environment? Recommend the latter.
 - **Sibling version drift detection.** Should the platform warn when a sibling has been at the same version for > N months relative to its peers? Probably a conformance scanner enhancement, not a schema concern.
 
 ---
@@ -374,7 +374,7 @@ We are seeking review and comments from:
 
 - Platform engineering (operator implementation, conformance scanner)
 - SRE practice leads (whether the model captures real ownership splits in their services)
-- Compliance & risk (whether the OLA-sibling pattern correctly isolates regulated content)
+- Compliance & risk (whether the SLA-sibling pattern correctly isolates regulated content)
 - Application teams (whether the per-team pin-advancing flow is workable)
 
 Please file comments as GitHub issues with the `rfc-0001` label, or comment directly on this file in PRs. Decision target: 30 days from RFC publication.
