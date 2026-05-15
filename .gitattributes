@@ -1,0 +1,26 @@
+﻿# Cross-platform line-ending policy:
+# Normalise text files to LF in the repo; on Windows checkout, git can render
+# them either way. Binaries are marked explicitly so git never touches them.
+
+* text=auto eol=lf
+
+# Treat these as binary - never normalise, never diff as text.
+*.docx binary
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.zip  binary
+*.tar  binary
+*.gz   binary
+*.7z   binary
+
+# Source files - explicitly text (defensive against future binary detection)
+*.md     text
+*.yaml   text
+*.yml    text
+*.json   text
+*.svg    text
+*.ps1    text
+*.sh     text eol=lf

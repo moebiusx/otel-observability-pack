@@ -1,0 +1,118 @@
+# otel-observability-pack
+
+> The platform-engineering standard for OpenTelemetry-native observability — one declarative manifest per service, reconciled into Prometheus + Elasticsearch + Grafana.
+
+A platform-engineering standard that binds every observability concern for a single service — SLIs/SLOs, telemetry collection, storage, queries, dashboards, alert policy, routing, self-healing, reliability baselines, and validation — into one declarative, versioned manifest.
+
+One service = one pack = one PR to change anything observable about it.
+
+---
+
+## Status
+
+| | |
+|---|---|
+| Version | 1.1.0 — OTel binding (draft) |
+| Author | Carlos (Platform Engineering Lead) & Claude Code - Session ID: |
+| Status | Draft for review |
+| First publication | 2026-05-08 (v1.0) ·  2026-05-12 (v1.1 OTel binding) |
+| Default binding | `otel-elastic-prometheus-grafana` |
+
+---
+
+## Layout
+
+```
+otel-observability-pack/
+├── README.md                       <- you are here
+├── setup.ps1                       <- bootstrap script (one-time)
+│
+├── spec/                           <- the standard itself
+│   └── ObservabilityPack-v1.1-Spec.md            (Markdown, renders on GitHub)
+│
+├── schema/                         <- machine-checkable contract
+│   └── observability-pack.schema.json     (JSON Schema 2020-12)
+│
+├── examples/                       <- reference packs
+│   └── payment-service.pack.yaml          (HTTP API + Kafka consumer)
+│
+├── docs/                           <- supporting documents
+│   ├── operator-design.md                 (controller / reconciliation design)
+│   └── maturity-model.md                  (tier-1/2/3 conformance rubric)
+│
+├── diagrams/                       <- architecture diagrams
+│   └── observability-pack-layered-model.svg / .png    (the layered model)
+│
+└── bindings/                       <- concrete realisations of the abstract spec
+    └── otel-elastic-prometheus-grafana.md             (OTel + Prom + Elastic + Grafana — v1.1 default)
+```
+
+---
+
+## The model in one paragraph
+
+The pack is organised as four concentric layers — **L1 Contract** (SLIs/SLOs), **L2 Telemetry** (OTel pipelines + storage), **L3 Insight** (queries + dashboards), **L4 Action** (policy + alerting + self-healing) — wrapped by a fifth, orthogonal layer, **L5 Validation** (chaos, synthetic probes, MTTD/MTTR baselines), that proves the four below it actually work. A `Pack` custom resource is reconciled by a Kubernetes operator into native artefacts (OTel Collector configs, Prometheus rule groups, Grafana dashboards, Alertmanager routes, Elasticsearch ILM policies, Argo Workflow templates, Chaos Mesh experiments, Elastic Synthetics monitors), with referential integrity enforced at CI time.
+
+**v1.1** introduces an explicit **OTel binding**: instrumentation is OpenTelemetry, metrics live in Prometheus, logs and traces live in Elasticsearch (Elastic APM-compatible), dashboards are in Grafana. See `bindings/otel-elastic-prometheus-grafana.md` for the full binding contract.
+
+See `spec/ObservabilityPack-v1.1-Spec.md` for the abstract model and `bindings/otel-elastic-prometheus-grafana.md` for the v1.1 OTel binding deltas.
+
+---
+
+## Quickstart
+
+1. **Read the spec** — `spec/ObservabilityPack-v1.1-Spec.md` is the canonical reference.
+2. **Copy the example** — `examples/payment-service.pack.yaml` is a working tier-1 pack covering an HTTP API and a Kafka consumer.
+3. **Validate locally** — `pip install jsonschema pyyaml` then:
+
+   ```bash
+   python -c "import yaml,json; from jsonschema import Draft202012Validator; \
+     v = Draft202012Validator(json.load(open('schema/observability-pack.schema.json'))); \
+     errs = list(v.iter_errors(yaml.safe_load(open('examples/payment-service.pack.yaml')))); \
+     print('OK' if not errs else f'FAIL: {len(errs)} error(s)')"
+   ```
+
+   The example pack ships valid; this is the same check the CI gate runs.
+
+4. **Read the maturity model** — `docs/maturity-model.md` tells you what's required at tier-3 vs tier-2 vs tier-1, so service teams can grow into conformance rather than facing an all-or-nothing bar.
+
+---
+
+## Conformance, in one table
+
+| Layer | Tier-3 (minimum) | Tier-2 | Tier-1 (full) |
+|---|---|---|---|
+| L1 SLIs/SLOs | Availability SLO | + Latency SLO | + Domain SLO |
+| L2 Collection | Default scrape | + OTel metrics | + OTel traces, logs |
+| L3 Queries | Recording rule per SLO | + Derived view | + Per-tenant rollups |
+| L3 Dashboards | Service overview | + SLO burn | + Deployment, customer-impact |
+| L4 Policy | Single-window alert | Multi-window burn rate | + Forecast |
+| L4 Alerting | Chat | + Voice for SEV1 | + WhatsApp out-of-band |
+| L4 Self-healing | Optional | Optional | At least one automation |
+| L5 Baselines | Declared | + Regression warning | + Release gate |
+| L5 Validation | Synthetic probe | + Monthly chaos | + Weekly prod chaos |
+
+Full clause-level rubric in `docs/maturity-model.md`.
+
+---
+
+## Roadmap
+
+| | |
+|---|---|
+| v1.0 | Initial draft of the abstract standard, schema, example, operator design, maturity model |
+| **v1.1** | **OTel-native binding (Prometheus / Elastic / Grafana) — current** |
+| v1.2 | Field-feedback revisions after first organisation-wide adoption |
+| v2.0 | Multi-cluster federation, cost-aware retention recommendations, conformance attestation, alternate bindings (`otel-grafanalabs`, `otel-aws-managed`) |
+
+---
+
+## Bootstrap (first time only)
+
+This folder is laid out by `setup.ps1`. The deliverable files were originally produced on the Desktop. Right-click `setup.ps1` → **Run with PowerShell** to copy them into the right subdirectories. Re-running is safe (it just refreshes).
+
+---
+
+## License & ownership
+
+Owned by Platform Engineering. Contributions via pull request; SemVer-bumped on every change; quarterly review cadence.

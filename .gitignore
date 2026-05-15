@@ -1,0 +1,18 @@
+# Build / generation artefacts
+node_modules/
+*.tmp
+.~lock.*#
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Local rendering outputs (regenerate from sources)
+diagrams/*.preview.png
+
+# OS
+.DS_Store
+Thumbs.db
