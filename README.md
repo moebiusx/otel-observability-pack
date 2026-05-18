@@ -28,7 +28,7 @@ otel-observability-pack/
 ├── setup.ps1                       <- bootstrap script (one-time)
 │
 ├── spec/                           <- the standard itself
-│   └── ObservabilityPack-v1.1-Spec.md            (Markdown, renders on GitHub)
+│   └── ObservabilityPack-Spec.md                 (Markdown, renders on GitHub)
 │
 ├── schema/                         <- machine-checkable contract
 │   └── observability-pack.schema.json     (JSON Schema 2020-12)
@@ -55,13 +55,13 @@ The pack is organised as four concentric layers — **L1 Contract** (SLIs/SLOs),
 
 **v1.1** introduces an explicit **OTel binding**: instrumentation is OpenTelemetry, metrics live in Prometheus, logs and traces live in Elasticsearch (Elastic APM-compatible), dashboards are in Grafana. See `bindings/otel-elastic-prometheus-grafana.md` for the full binding contract.
 
-See `spec/ObservabilityPack-v1.1-Spec.md` for the abstract model and `bindings/otel-elastic-prometheus-grafana.md` for the v1.1 OTel binding deltas.
+See `spec/ObservabilityPack-Spec.md` for the abstract model and `bindings/otel-elastic-prometheus-grafana.md` for the OTel binding deltas.
 
 ---
 
 ## Quickstart
 
-1. **Read the spec** — `spec/ObservabilityPack-v1.1-Spec.md` is the canonical reference.
+1. **Read the spec** — `spec/ObservabilityPack-Spec.md` is the canonical reference.
 2. **Copy the example** — `examples/payment-service.pack.yaml` is a working tier-1 pack covering an HTTP API and a Kafka consumer.
 3. **Validate locally** — `pip install jsonschema pyyaml` then:
 
