@@ -437,16 +437,6 @@ A complete worked example for an HTTP API + Kafka consumer is `examples/payment-
 
 The full binding contract for the default stack (OTel + Prometheus + Elasticsearch + Grafana) lives in `bindings/otel-elastic-prometheus-grafana.md`. It specifies exact stack version floors, OTel Collector YAML mappings, Elasticsearch ILM templates, Prometheus rule formats, and Grafana provisioning details.
 
-## Appendix D — v1.0 → v1.1 migration
-
-1. Add the `otel:` block at the top of `spec:` (required).
-2. Rename `spec.collection` to `spec.pipelines` and reshape into receivers/processors/exporters.
-3. Pin `metadata.binding: otel-elastic-prometheus-grafana`.
-4. Optionally rename SLI metric references to OTel SemConv names.
-5. Re-validate against the v1.1 schema; CI gate blocks non-conforming merges.
-
-Grace period: v1.0 packs accepted for 90 days after v1.1 publication. After that, the operator refuses to reconcile v1.0 manifests.
-
 ---
 
 *End of spec.*
