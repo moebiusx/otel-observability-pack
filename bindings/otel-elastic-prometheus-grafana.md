@@ -371,20 +371,6 @@ The `otel_instrumentation: true` flag is the magic: synthetic probes generate th
 
 ---
 
-## 7. Migration from v1.0 to v1.1
-
-Service teams running v1.0 packs upgrade by:
-
-1. **Add the `otel:` block** at the top of `spec:`. Required.
-2. **Rename `collection:` to `pipelines:`** and reshape. The operator's v1.0→v1.1 converter handles the mechanical translation if invoked with `packtool migrate --to v1.1`.
-3. **Rename SLI/SLO metric references** to OTel SemConv form. Either translate by hand (preferred) or accept the converter's heuristic guesses.
-4. **Pin `binding: otel-elastic-prometheus-grafana`** in metadata.
-5. **Re-validate** against the v1.1 schema. CI gate will block merges that don't conform.
-
-Grace period: v1.0 packs continue to be accepted for 90 days after v1.1 ships. After that, the operator refuses to reconcile v1.0 manifests and the conformance scanner flags them as non-conformant.
-
----
-
 ## 8. Open questions
 
 A handful of decisions deliberately left open for review:
@@ -393,11 +379,3 @@ A handful of decisions deliberately left open for review:
 - **Elastic APM vs OTel-native Tempo.** Sticking with Elastic for now since logs already live there and the join story is cleaner. Worth revisiting when Tempo's TraceQL matures further.
 - **Grafana Alerting vs Prometheus Alertmanager.** Two separate alerting engines exist (Grafana built-in + Alertmanager). Today the binding pins Alertmanager because it's already deployed; Grafana Alerting may make sense for log-derived alerts in a future revision.
 - **OnCall integration.** Grafana OnCall is the standard for tier-1 routing; the binding currently assumes PagerDuty. A future revision may pin Grafana OnCall instead.
-
----
-
-## 9. Change log
-
-| Date | Author | Change |
-|---|---|---|
-| 2026-05-08 | Carlos | Initial draft of the binding alongside v1.1 pack schema |
