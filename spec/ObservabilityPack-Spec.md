@@ -32,6 +32,14 @@ This document defines the contract for an ObservabilityPack: its conceptual mode
 - It does not replace incident management, post-mortem, or change management processes. It feeds them; it does not substitute for them.
 - It does not cover business KPIs or product analytics. Those belong in a separate analytics surface; the pack covers operational signals.
 
+### 1.3 Versioning
+
+The standard itself is unversioned — this document is the current contract. Three independent versioning axes do appear inside the contract and should not be confused with one another:
+
+- **`apiVersion: observability.platform/v1`** — the stable API surface for pack manifests, in the Kubernetes-style sense. A breaking change to the manifest shape would bump this to `v2`.
+- **`metadata.version`** on each pack — SemVer per pack instance, owned by the service team. Bumped on every pack change. Unrelated to the spec.
+- **Binding name** (currently `otel-elastic-prometheus-grafana`) — the realisation contract for a specific stack. Future bindings live as separate documents under `bindings/` and do not bump the `apiVersion`.
+
 ---
 
 ## 2. Scope and applicability
