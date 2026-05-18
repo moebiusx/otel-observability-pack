@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://platform.example/schemas/observability-pack/v1.1.json",
+  "$id": "https://platform.example/schemas/observability-pack/v1.json",
   "title": "ObservabilityPack",
-  "description": "Platform-standard manifest binding OTel instrumentation, SLIs/SLOs, telemetry pipelines, storage, queries, dashboards, alert policy, routing, self-healing, baselines, and validation for one service. v1.1 introduces an OTel-native binding for Prometheus + Elasticsearch + Grafana.",
+  "description": "Platform-standard manifest binding OTel instrumentation, SLIs/SLOs, telemetry pipelines, storage, queries, dashboards, alert policy, routing, self-healing, baselines, and validation for one service. Default binding is OTel + Prometheus + Elasticsearch + Grafana.",
   "type": "object",
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "additionalProperties": false,
