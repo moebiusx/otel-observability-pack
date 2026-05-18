@@ -2,7 +2,6 @@
 
 **Binding ID:** `otel-elastic-prometheus-grafana`
 **Pack apiVersion:** `observability.platform/v1`
-**Pack version compatibility:** `>= 1.1.0`
 **Status:** Draft for review
 **Owner:** Platform Engineering — Observability Practice
 
@@ -10,9 +9,9 @@
 
 ## 1. Purpose
 
-The v1.0 ObservabilityPack defined the **abstract** standard: ten dimensions, five layers, conformance rubric. It deliberately stayed tool-agnostic so the same model could land on different stacks without rewriting the schema.
+The ObservabilityPack spec defines the **abstract** standard: ten dimensions, five layers, conformance rubric. It deliberately stays tool-agnostic so the same model can land on different stacks without rewriting the schema.
 
-This binding document pins the **concrete realisation** for the platform's current stack:
+This binding document is the platform's current default realisation, pinning the **concrete** stack:
 
 - **Instrumentation:** OpenTelemetry SDK + OTel Collector
 - **Metrics:** Prometheus (with optional Mimir / Thanos for long-term retention)
@@ -45,7 +44,7 @@ The binding moves in lock-step with these. A "latest−1" floor is non-negotiabl
 
 ## 3. The OTel-native pack shape
 
-The pack manifest gains one new top-level section (`spec.otel`) and one section is restructured (`spec.collection` → `spec.pipelines`). Everything else carries forward from v1.0.
+Two sections of the pack manifest are binding-specific: a top-level `spec.otel` block (instrumentation contract) and a `spec.pipelines` block whose shape mirrors OTel Collector configuration. Every other section is shared with the abstract spec.
 
 ### 3.1 Required `spec.otel` block
 
@@ -73,7 +72,7 @@ otel:
 
 Every pack MUST declare this block. The operator validates that emitted telemetry actually carries these resource attributes; missing attributes flip the pack to `Degraded`.
 
-### 3.2 `spec.pipelines` (replaces v1.0 `spec.collection`)
+### 3.2 `spec.pipelines`
 
 The shape mirrors OTel Collector configuration deliberately, so the operator can render it directly:
 
@@ -126,7 +125,7 @@ Three logical pipelines emerge (metrics, logs, traces), each composed of receive
 
 ### 3.3 SemConv-aligned SLI references
 
-In v1.0 the example pack named its SLI metric as `http_request_duration_seconds_bucket`. The OTel-native form is:
+SLIs reference metrics by their canonical OTel SemConv name; the materialised PromQL is the form after prometheusexporter translation. Example:
 
 ```yaml
 slis:
@@ -388,7 +387,7 @@ Grace period: v1.0 packs continue to be accepted for 90 days after v1.1 ships. A
 
 ## 8. Open questions
 
-A handful of decisions deliberately left open for the v1.1 review cycle:
+A handful of decisions deliberately left open for review:
 
 - **Mimir vs Thanos for long-term retention.** Either works; we've defaulted to Mimir in §4.1 because of its native multi-tenancy. If we adopt Thanos for cost reasons, this section needs to be re-pinned.
 - **Elastic APM vs OTel-native Tempo.** Sticking with Elastic for now since logs already live there and the join story is cleaner. Worth revisiting when Tempo's TraceQL matures further.
