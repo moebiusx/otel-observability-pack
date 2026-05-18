@@ -1,9 +1,8 @@
 # =============================================================================
-# ObservabilityPack: payment-service  (v1.1 — OTel-native)
+# ObservabilityPack: payment-service
 # -----------------------------------------------------------------------------
 # Reference example for the OTel binding (Prometheus + Elasticsearch + Grafana).
-# Same service shape as v1.0 example (HTTP API + Kafka consumer), refactored to
-# use OTel semantic conventions and OTel Collector pipeline structure.
+# Covers an HTTP API and a Kafka consumer.
 # =============================================================================
 
 apiVersion: observability.platform/v1
@@ -12,7 +11,7 @@ kind: ObservabilityPack
 metadata:
   name: payment-service
   version: 1.5.0
-  binding: otel-elastic-prometheus-grafana    # NEW in v1.1: pins the realisation
+  binding: otel-elastic-prometheus-grafana    # pins the realisation
   owners:
     - team-payments
     - team-platform-sre
@@ -34,7 +33,7 @@ metadata:
 spec:
 
   # ---------------------------------------------------------------------------
-  # NEW in v1.1 — OTel instrumentation contract
+  # OTel instrumentation contract
   # ---------------------------------------------------------------------------
   otel:
     semconv: "1.27.0"
@@ -132,7 +131,7 @@ spec:
         }[5m]))
 
   # ---------------------------------------------------------------------------
-  # 2. SLOs — unchanged shape from v1.0
+  # 2. SLOs
   # ---------------------------------------------------------------------------
   slos:
     - { id: api_availability_99_9,           sli: api_availability,           objective: 0.999,  window: 30d, error_budget_policy: ref:platform/std-budget-policy }
@@ -142,7 +141,7 @@ spec:
     - { id: consumer_success_99_95,          sli: consumer_processing_success, objective: 0.9995, window: 30d, error_budget_policy: ref:platform/std-budget-policy }
 
   # ---------------------------------------------------------------------------
-  # 3. Pipelines — REPLACES v1.0 `collection:`; mirrors OTel Collector config
+  # 3. Pipelines — mirrors OTel Collector config
   # ---------------------------------------------------------------------------
   pipelines:
 
