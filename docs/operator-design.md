@@ -1,7 +1,7 @@
 # ObservabilityPack Operator — Design Sketch
 
-**Document status:** Design proposal, v0.2 (OTel binding)
-**Companion to:** *ObservabilityPack v1.1 — Platform Engineering Standard*
+**Document status:** Design proposal
+**Companion to:** *ObservabilityPack — Platform Engineering Standard*
 **Binding:** `otel-elastic-prometheus-grafana` (see `bindings/otel-elastic-prometheus-grafana.md`)
 **Audience:** Platform engineers building the reconciliation layer.
 
@@ -11,7 +11,7 @@
 
 The ObservabilityPack manifest is declarative and binding-aware. The operator is the controller that turns a pack into the concrete, native resources that the **OTel Collector**, **Prometheus**, **Elasticsearch**, **Grafana**, **Alertmanager**, **Argo Workflows**, and **Chaos Mesh** understand. It is the only component permitted to write to those backends; everything else reads pack manifests from Git.
 
-This document describes the operator's responsibilities, control loops, reconciliation model, failure handling, and the contract it exposes to other platform components — pinned to the v1.1 OTel-native binding.
+This document describes the operator's responsibilities, control loops, reconciliation model, failure handling, and the contract it exposes to other platform components.
 
 ---
 
@@ -97,7 +97,7 @@ Responsibilities:
 - Materialise each SLO with its objective and window. The error-budget burn-rate recording rules follow.
 - Resolve `error_budget_policy` references (typically to a platform-default policy) and inline the policy into the generated CRD.
 
-### 4.1b OTel sub-controller (new in v1.1)
+### 4.1b OTel sub-controller
 
 **Owns:** `spec.otel`
 **Renders to:** OpenTelemetry Operator `Instrumentation` CRs + gateway Collector validation rules.

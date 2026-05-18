@@ -1,7 +1,5 @@
 # ObservabilityPack Maturity Model
 
-**Document status:** v1.0
-**Companion to:** *ObservabilityPack v1.0 — Platform Engineering Standard*
 **Audience:** Service owners, SREs, platform engineers, compliance.
 
 ---
