@@ -3,12 +3,15 @@ package controller_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -68,7 +71,9 @@ func TestPackReconciler_SKE_AppliesObjectsAndReportsReady(t *testing.T) {
 		WithStatusSubresource(&apiv1.Pack{}).
 		Build()
 
-	r := &opcontroller.PackReconciler{Client: c, Applier: upsertApplier{}}
+	rec := record.NewFakeRecorder(64)
+
+	r := &opcontroller.PackReconciler{Client: c, Applier: upsertApplier{}, Recorder: rec}
 	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "payments", Namespace: "obs"}})
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -90,6 +95,13 @@ func TestPackReconciler_SKE_AppliesObjectsAndReportsReady(t *testing.T) {
 	if len(got.Status.Tools) == 0 {
 		t.Error("tools status must be populated")
 	}
+
+	assertCondition(t, &got, opcontroller.ConditionValidated, metav1.ConditionTrue)
+	assertCondition(t, &got, opcontroller.ConditionReady, metav1.ConditionTrue)
+	assertCondition(t, &got, opcontroller.ConditionDegraded, metav1.ConditionFalse)
+	assertCondition(t, &got, opcontroller.ConditionProgressing, metav1.ConditionFalse)
+	assertEvent(t, rec, opcontroller.ReasonApplied)
+	assertEvent(t, rec, opcontroller.ReasonReady)
 
 	// Verify a PrometheusRule was applied via SSA into the fake client.
 	pr := &unstructured.Unstructured{}
@@ -124,7 +136,8 @@ func TestPackReconciler_Azure_TriggersPipeline(t *testing.T) {
 		Build()
 
 	azure := &fakeAzure{resp: apiv1.PipelineRunInfo{RunID: "42", URL: "https://dev.azure.com/run/42", Status: "Triggered"}}
-	r := &opcontroller.PackReconciler{Client: c, Azure: azure}
+	rec := record.NewFakeRecorder(64)
+	r := &opcontroller.PackReconciler{Client: c, Azure: azure, Recorder: rec}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "payments", Namespace: "obs"}}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -144,5 +157,37 @@ func TestPackReconciler_Azure_TriggersPipeline(t *testing.T) {
 	}
 	if got.Status.AzurePipelineRun == nil || got.Status.AzurePipelineRun.RunID != "42" {
 		t.Errorf("AzurePipelineRun = %+v", got.Status.AzurePipelineRun)
+	}
+	assertCondition(t, &got, opcontroller.ConditionReady, metav1.ConditionTrue)
+	assertEvent(t, rec, opcontroller.ReasonPipelineQueued)
+}
+
+func assertCondition(t *testing.T, p *apiv1.Pack, condType string, want metav1.ConditionStatus) {
+	t.Helper()
+	cond := meta.FindStatusCondition(p.Status.Conditions, condType)
+	if cond == nil {
+		t.Errorf("condition %q not present", condType)
+		return
+	}
+	if cond.Status != want {
+		t.Errorf("condition %q = %s, want %s (reason=%s msg=%q)", condType, cond.Status, want, cond.Reason, cond.Message)
+	}
+	if cond.ObservedGeneration == 0 {
+		t.Errorf("condition %q has zero observedGeneration", condType)
+	}
+}
+
+func assertEvent(t *testing.T, rec *record.FakeRecorder, reason string) {
+	t.Helper()
+	for {
+		select {
+		case ev := <-rec.Events:
+			if strings.Contains(ev, reason) {
+				return
+			}
+		default:
+			t.Errorf("no event with reason %q observed", reason)
+			return
+		}
 	}
 }

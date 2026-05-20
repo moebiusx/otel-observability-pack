@@ -56,8 +56,9 @@ func main() {
 	}
 
 	if err := (&controller.PackReconciler{
-		Client: mgr.GetClient(),
-		Azure:  httptrigger.New(mgr.GetClient()),
+		Client:   mgr.GetClient(),
+		Azure:    httptrigger.New(mgr.GetClient()),
+		Recorder: mgr.GetEventRecorderFor("observability-pack-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupExit(err, "setup PackReconciler")
 	}

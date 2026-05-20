@@ -1,0 +1,68 @@
+# Minimal stand-in CRDs for the smoke test only. Real clusters run the
+# actual Prometheus, Grafana, and OpenTelemetry Operators which install
+# fully-typed CRDs. For the smoke we only need the API server to accept
+# the CRs the meta-operator applies, so the schema is intentionally
+# permissive (preserve-unknown-fields).
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: prometheusrules.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  scope: Namespaced
+  names:
+    plural: prometheusrules
+    singular: prometheusrule
+    kind: PrometheusRule
+    listKind: PrometheusRuleList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: grafanadashboards.grafana.integreatly.org
+spec:
+  group: grafana.integreatly.org
+  scope: Namespaced
+  names:
+    plural: grafanadashboards
+    singular: grafanadashboard
+    kind: GrafanaDashboard
+    listKind: GrafanaDashboardList
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: opentelemetrycollectors.opentelemetry.io
+spec:
+  group: opentelemetry.io
+  scope: Namespaced
+  names:
+    plural: opentelemetrycollectors
+    singular: opentelemetrycollector
+    kind: OpenTelemetryCollector
+    listKind: OpenTelemetryCollectorList
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
