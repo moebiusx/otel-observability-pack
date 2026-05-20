@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-The ObservabilityPack manifest is declarative and binding-aware. The operator is a **superoperator**: it turns a pack into intent for the operators and platform automation that already own the runtime. In SKE and bare Kubernetes clusters, it uses the **OpenTelemetry Operator**, **Prometheus Operator**, **Grafana Operator**, Elastic/storage operators, Alertmanager config controllers, **Argo Workflows / Events**, and **Chaos Mesh** as tools by writing their CRDs and watching their status. For Azure-hosted targets, it submits an approved pipeline run that applies the same effective pack through Azure-native IaC or automation rather than mutating Azure resources directly.
+The ObservabilityPack manifest is declarative and binding-aware. The operator is a **meta-operator**: it turns a pack into intent for the operators and platform automation that already own the runtime. In SKE and bare Kubernetes clusters, it uses the **OpenTelemetry Operator**, **Prometheus Operator**, **Grafana Operator**, Elastic/storage operators, Alertmanager config controllers, **Argo Workflows / Events**, and **Chaos Mesh** as tools by writing their CRDs and watching their status. For Azure-hosted targets, it submits an approved pipeline run that applies the same effective pack through Azure-native IaC or automation rather than mutating Azure resources directly.
 
 The Pack Operator owns pack resolution, planning, orchestration, policy, and status. Tool operators own their native resources.
 
@@ -28,7 +28,7 @@ This document describes the operator's responsibilities, control loops, reconcil
                                                    ▼
                                        ┌─────────────────────────┐
                                        │  Pack Operator          │
-                                       │  (superoperator)        │
+                                       │  (meta-operator)        │
                                        └────┬────────┬───────────┘
                                             │        │
    ┌────────────────────────────────────────┘        └────────────────────────────────────┐
@@ -47,7 +47,7 @@ This document describes the operator's responsibilities, control loops, reconcil
 Three logical components:
 
 1. **Pack Registry** — the in-cluster materialisation of every Git-stored pack, plus a derived index that lets reverse-lookup ("which packs depend on platform/std-alert-routes@3.0?") run in O(1).
-2. **Pack Operator** — a Kubernetes controller and superoperator that watches the registry, resolves each pack, plans the effective desired state, and invokes the right tools.
+2. **Pack Operator** — a Kubernetes controller and meta-operator that watches the registry, resolves each pack, plans the effective desired state, and invokes the right tools.
 3. **Tool adapters** — one per target operator or automation surface. Adapters do not reimplement Prometheus, Grafana, OTel, Elastic, Argo, or Chaos Mesh; they write the CRDs or trigger the pipelines those systems already own.
 
 The split between the Pack Operator and tool adapters exists for blast-radius reasons: a bug in the chaos-experiment renderer should not be able to take down the alert routing pipeline.
@@ -56,8 +56,8 @@ The split between the Pack Operator and tool adapters exists for blast-radius re
 
 | Target | Execution mode | Pack Operator action | Tool surface |
 |---|---|---|---|
-| SKE | In-cluster operator-of-operators | Write tool CRDs, set owner labels, watch status, update `Pack.status` | OpenTelemetry Operator, Prometheus Operator, Grafana Operator, storage operators, Alertmanager config controllers, Argo, Chaos Mesh |
-| Bare Kubernetes | In-cluster operator-of-operators | Same as SKE, with capability discovery for whichever tool operators are installed | Same tool contracts, degraded gracefully when a tool is absent |
+| SKE | In-cluster meta-operator | Write tool CRDs, set owner labels, watch status, update `Pack.status` | OpenTelemetry Operator, Prometheus Operator, Grafana Operator, storage operators, Alertmanager config controllers, Argo, Chaos Mesh |
+| Bare Kubernetes | In-cluster meta-operator | Same as SKE, with capability discovery for whichever tool operators are installed | Same tool contracts, degraded gracefully when a tool is absent |
 | Azure | Pipeline tool | Create an auditable pipeline invocation from the effective pack; watch the run result; surface success/failure in `Pack.status` | Azure DevOps or GitHub Actions pipeline applying Azure-native IaC, policy, dashboards, alerts, and integrations |
 
 The common contract is the **effective pack**. SKE and bare Kubernetes consume it through Kubernetes CRDs. Azure consumes it through a pipeline payload so cloud changes remain reviewable and governed by the existing Azure release controls.

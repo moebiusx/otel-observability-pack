@@ -28,7 +28,7 @@ func Prometheus(pl *plan.Plan, namespace string) Object {
 	if pl == nil {
 		return nil
 	}
-	rules := make([]map[string]any, 0, len(pl.Prometheus.RecordingRules)+len(pl.Prometheus.AlertRules))
+	rules := make([]any, 0, len(pl.Prometheus.RecordingRules)+len(pl.Prometheus.AlertRules))
 	for _, rr := range pl.Prometheus.RecordingRules {
 		entry := map[string]any{
 			"record": rr.Name,
@@ -65,8 +65,8 @@ func Prometheus(pl *plan.Plan, namespace string) Object {
 			"labels":    ownerLabels(pl),
 		},
 		"spec": map[string]any{
-			"groups": []map[string]any{
-				{
+			"groups": []any{
+				map[string]any{
 					"name":  pl.Prometheus.GroupName,
 					"rules": rules,
 				},
@@ -159,7 +159,7 @@ func OTel(pl *plan.Plan, namespace string) Object {
 				"exporters":  exporters,
 			},
 			"resourceAttributes": map[string]any{
-				"required": pl.OTel.RequiredAttr,
+				"required": stringSliceToAny(pl.OTel.RequiredAttr),
 				"semconv":  pl.OTel.SemConv,
 			},
 		},
@@ -180,6 +180,16 @@ func stringMap(in map[string]string) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = v
+	}
+	return out
+}
+
+// stringSliceToAny widens a []string to []any so the value satisfies
+// k8s DeepCopyJSON (which rejects typed slices).
+func stringSliceToAny(in []string) []any {
+	out := make([]any, len(in))
+	for i, v := range in {
+		out[i] = v
 	}
 	return out
 }
