@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -53,8 +54,9 @@ func (SSAApplier) Apply(ctx context.Context, c client.Client, obj *unstructured.
 // PackReconciler reconciles a Pack object.
 type PackReconciler struct {
 	client.Client
-	Azure   AzureTrigger
-	Applier ObjectApplier
+	Azure    AzureTrigger
+	Applier  ObjectApplier
+	Recorder record.EventRecorder
 }
 
 func (r *PackReconciler) applier() ObjectApplier {
@@ -62,6 +64,15 @@ func (r *PackReconciler) applier() ObjectApplier {
 		return r.Applier
 	}
 	return SSAApplier{}
+}
+
+// emit fires an Event when a recorder is configured. Tests that don't
+// care about events can leave Recorder nil.
+func (r *PackReconciler) emit(p *apiv1.Pack, eventtype, reason, messageFmt string, args ...any) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(p, eventtype, reason, messageFmt, args...)
 }
 
 // +kubebuilder:rbac:groups=observability.platform,resources=packs,verbs=get;list;watch;update;patch
@@ -83,6 +94,10 @@ func (r *PackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 
+	// Announce we're working on this generation.
+	markProgressing(&p, fmt.Sprintf("reconciling generation %d", p.Generation))
+	p.Status.Phase = apiv1.PhasePlanning
+
 	// Resolve namespace for in-cluster CRDs (defaults to the Pack's own).
 	ns := p.Spec.Namespace
 	if ns == "" {
@@ -92,36 +107,56 @@ func (r *PackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// Run the pure core.
 	result, err := operator.Reconcile(p.Spec.Manifest, p.Spec.Target, ns, p.Spec.AzurePipeline)
 	if err != nil {
-		return r.fail(ctx, &p, fmt.Errorf("reconcile core: %w", err))
+		r.emit(&p, "Warning", ReasonValidationFailed, "reconcile core: %s", err.Error())
+		return r.fail(ctx, &p, ReasonValidationFailed, fmt.Errorf("reconcile core: %w", err))
 	}
 
 	if result.BlockedReason != "" {
+		markBlocked(&p, result.BlockedReason)
 		p.Status.Phase = apiv1.PhaseBlocked
 		p.Status.LastError = result.BlockedReason
 		p.Status.ObservedGeneration = p.Generation
+		r.emit(&p, "Warning", ReasonValidationFailed, "pack blocked: %s", result.BlockedReason)
 		return ctrl.Result{}, r.Status().Update(ctx, &p)
 	}
+	markValidated(&p)
 
 	// Apply per target.
 	switch p.Spec.Target {
 	case apiv1.TargetSKE, apiv1.TargetBareK8s:
+		p.Status.Phase = apiv1.PhaseApplying
 		toolStatus, err := r.applyObjects(ctx, &p, result.Objects)
-		if err != nil {
-			p.Status.Tools = toolStatus
-			return r.fail(ctx, &p, err)
-		}
 		p.Status.Tools = toolStatus
+		if err != nil {
+			for _, ts := range toolStatus {
+				if ts.Phase == apiv1.PhaseDegraded {
+					r.emit(&p, "Warning", ReasonApplyFailed, "%s: %s", ts.Tool, ts.Message)
+				}
+			}
+			return r.fail(ctx, &p, ReasonApplyFailed, err)
+		}
+		for _, ts := range toolStatus {
+			r.emit(&p, "Normal", ReasonApplied, "%s: applied %d object(s)", ts.Tool, ts.Objects)
+		}
 		p.Status.Phase = apiv1.PhaseReady
+		markReady(&p, fmt.Sprintf("applied %d object(s) across %d tool(s)", totalObjects(toolStatus), len(toolStatus)))
+		r.emit(&p, "Normal", ReasonReady, "pack applied (hash=%s)", shortHash(result.Plan.Hash))
 	case apiv1.TargetAzure:
+		p.Status.Phase = apiv1.PhaseApplying
 		runInfo, err := r.triggerAzure(ctx, &p, result)
 		if err != nil {
-			return r.fail(ctx, &p, err)
+			r.emit(&p, "Warning", ReasonPipelineFailed, "trigger pipeline: %s", err.Error())
+			return r.fail(ctx, &p, ReasonPipelineFailed, err)
 		}
 		p.Status.AzurePipelineRun = runInfo
 		p.Status.Tools = []apiv1.ToolStatus{{Tool: "azure-pipeline", Phase: apiv1.PhaseApplying, Message: runInfo.Status}}
 		p.Status.Phase = apiv1.PhaseApplying
+		// Pipeline-driven targets are Ready-as-triggered; pipeline
+		// completion is reported on Status.AzurePipelineRun.
+		markReady(&p, fmt.Sprintf("pipeline triggered (run=%s)", runInfo.RunID))
+		r.emit(&p, "Normal", ReasonPipelineQueued, "pipeline run %s queued", runInfo.RunID)
 	default:
-		return r.fail(ctx, &p, fmt.Errorf("unknown target %q", p.Spec.Target))
+		return r.fail(ctx, &p, ReasonValidationFailed, fmt.Errorf("unknown target %q", p.Spec.Target))
 	}
 
 	p.Status.LastError = ""
@@ -133,6 +168,21 @@ func (r *PackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	logger.Info("reconciled", "phase", p.Status.Phase, "hash", p.Status.EffectiveHash)
 	// Resync periodically to detect drift; SSA already idempotent.
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+}
+
+func totalObjects(ts []apiv1.ToolStatus) int {
+	n := 0
+	for _, t := range ts {
+		n += t.Objects
+	}
+	return n
+}
+
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
 }
 
 // applyObjects server-side-applies each rendered tool CRD. Failures on
@@ -205,10 +255,12 @@ func (r *PackReconciler) triggerAzure(ctx context.Context, p *apiv1.Pack, res *o
 // fail records the error on Status and short-circuits the rest of the
 // reconcile. The controller does not push the error up to the manager
 // so a single bad Pack can't take down the work loop.
-func (r *PackReconciler) fail(ctx context.Context, p *apiv1.Pack, err error) (ctrl.Result, error) {
+func (r *PackReconciler) fail(ctx context.Context, p *apiv1.Pack, reason string, err error) (ctrl.Result, error) {
 	p.Status.Phase = apiv1.PhaseDegraded
 	p.Status.LastError = err.Error()
 	p.Status.ObservedGeneration = p.Generation
+	markDegraded(p, reason, err.Error())
+	r.emit(p, "Warning", ReasonDegraded, "%s: %s", reason, err.Error())
 	if uerr := r.Status().Update(ctx, p); uerr != nil {
 		return ctrl.Result{}, uerr
 	}
