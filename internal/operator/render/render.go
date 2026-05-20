@@ -167,12 +167,21 @@ func OTel(pl *plan.Plan, namespace string) Object {
 }
 
 func ownerLabels(pl *plan.Plan) map[string]any {
+	// Kubernetes label values are limited to 63 chars; the full
+	// SHA-256 hex is 64. Use the first 16 hex chars as the
+	// label-friendly identifier — collisions across the same pack are
+	// astronomically unlikely, and the full hash remains available on
+	// Pack.status.effectiveHash for forensics.
+	shortHash := pl.Hash
+	if len(shortHash) > 16 {
+		shortHash = shortHash[:16]
+	}
 	return map[string]any{
 		"app.kubernetes.io/managed-by":          "observability-pack-operator",
 		"observability.platform/pack":           pl.Pack,
 		"observability.platform/pack-version":   pl.Version,
 		"observability.platform/pack-service":   pl.Service,
-		"observability.platform/effective-hash": pl.Hash,
+		"observability.platform/effective-hash": shortHash,
 	}
 }
 
