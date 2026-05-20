@@ -167,8 +167,8 @@ spec:
         timeout: 10s
       - name: resource
         attributes:
-          - { key: deployment.environment, value: ${ENV}, action: upsert }
-          - { key: business.domain,         value: payments, action: insert }
+          - { key: deployment.environment, value: "${ENV}",  action: upsert }
+          - { key: business.domain,        value: "payments", action: insert }
       - name: transform
         log_statements:
           - context: log

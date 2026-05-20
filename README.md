@@ -62,16 +62,41 @@ See `spec/ObservabilityPack-Spec.md` for the abstract model and `bindings/otel-e
 
 1. **Read the spec** — `spec/ObservabilityPack-Spec.md` is the canonical reference.
 2. **Copy the example** — `examples/payment-service.pack.yaml` is a working tier-1 pack covering an HTTP API and a Kafka consumer.
-3. **Validate locally** — `pip install jsonschema pyyaml` then:
+3. **Validate locally** — two options:
+
+   **Option A — `packlint` (recommended, includes maturity-model conformance):**
 
    ```bash
+   go run ./cmd/packlint --schema schema/observability-pack.schema.json \
+     examples/payment-service.pack.yaml
+   ```
+
+   Output formats: `--format text|yaml|json`. Exit code `0` on full pass, `1` on any
+   error-severity finding, `2` on invocation error. CI uses `--format yaml` and
+   archives the report.
+
+   `packlint` runs three independent passes:
+
+   - **Schema** — JSON Schema 2020-12 compliance.
+   - **References** — every `slis.<id>`, `slos.<id>`, dashboard panel binding,
+     remediation trigger, and chaos `expected_alerts` entry resolves to a
+     defined object. External `ref:platform/...` imports are deferred to the
+     import resolver (info-level).
+   - **Conformance** — clause-by-clause scoring against the maturity rubric
+     in `docs/maturity-model.md` §3, cumulative across tier-3 → tier-2 → tier-1
+     up to the pack's declared `metadata.bindings.criticality`.
+
+   **Option B — Python jsonschema only (schema check, no conformance):**
+
+   ```bash
+   pip install jsonschema pyyaml
    python -c "import yaml,json; from jsonschema import Draft202012Validator; \
      v = Draft202012Validator(json.load(open('schema/observability-pack.schema.json'))); \
      errs = list(v.iter_errors(yaml.safe_load(open('examples/payment-service.pack.yaml')))); \
      print('OK' if not errs else f'FAIL: {len(errs)} error(s)')"
    ```
 
-   The example pack ships valid; this is the same check the CI gate runs.
+   The example pack ships schema-valid; this is the same check the CI gate runs.
 
 4. **Read the maturity model** — `docs/maturity-model.md` tells you what's required at tier-3 vs tier-2 vs tier-1, so service teams can grow into conformance rather than facing an all-or-nothing bar.
 
