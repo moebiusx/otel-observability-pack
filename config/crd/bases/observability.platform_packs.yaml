@@ -1,0 +1,100 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: packs.observability.platform
+spec:
+  group: observability.platform
+  scope: Namespaced
+  names:
+    kind: Pack
+    listKind: PackList
+    plural: packs
+    singular: pack
+    shortNames:
+      - pack
+      - obspack
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Target
+          type: string
+          jsonPath: .spec.target
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Hash
+          type: string
+          jsonPath: .status.effectiveHash
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [target, manifest]
+              properties:
+                target:
+                  type: string
+                  enum: [ske, bare-k8s, azure]
+                namespace:
+                  type: string
+                azurePipeline:
+                  type: object
+                  required: [provider, pipeline]
+                  properties:
+                    provider:
+                      type: string
+                      enum: [azure-devops, github-actions]
+                    organization: { type: string }
+                    project: { type: string }
+                    pipeline: { type: string }
+                    branch: { type: string }
+                    credentialsSecretRef: { type: string }
+                manifest:
+                  type: object
+                  description: The literal observability-pack document.
+                  x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              properties:
+                phase: { type: string }
+                observedGeneration: { type: integer, format: int64 }
+                effectiveHash: { type: string }
+                lastError: { type: string }
+                tools:
+                  type: array
+                  items:
+                    type: object
+                    required: [tool, phase]
+                    properties:
+                      tool: { type: string }
+                      phase: { type: string }
+                      objects: { type: integer }
+                      message: { type: string }
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type: { type: string }
+                      status: { type: string }
+                      lastTransitionTime: { type: string, format: date-time }
+                      reason: { type: string }
+                      message: { type: string }
+                      observedGeneration: { type: integer, format: int64 }
+                azurePipelineRun:
+                  type: object
+                  properties:
+                    runId: { type: string }
+                    url: { type: string }
+                    status: { type: string }
+                    started: { type: string, format: date-time }
