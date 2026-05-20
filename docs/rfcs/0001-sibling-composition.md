@@ -7,18 +7,18 @@
 | Status | **Draft — request for comments** |
 | Author | Platform Engineering |
 | Created | 2026-05-13 |
-| Target version | v1.2 |
+| Target version | next spec revision |
 | Discussion | issues/comments on the repo, or platform-engineering@ |
 
 ---
 
 ## 1. Summary
 
-v1.1 of the ObservabilityPack standard supports *vertical* composition: a service pack inherits from one or more platform-level base packs via `metadata.imports`, with later imports overriding earlier ones. This RFC proposes *horizontal* composition: multiple sibling packs that together describe a single service's observability surface, each owned by a different team and contributing a disjoint slice of the spec.
+The ObservabilityPack spec supports *vertical* composition: a service pack inherits from one or more platform-level base packs via `metadata.imports`, with later imports overriding earlier ones. This RFC proposes *horizontal* composition: multiple sibling packs that together describe a single service's observability surface, each owned by a different team and contributing a disjoint slice of the spec.
 
-The target use case is a service whose observability is genuinely co-owned by multiple parties — a contractually-driven slice (SLA, audit, governance), a platform-driven slice (vendor / infrastructure telemetry), and an application-driven slice (per-application SLIs and alerts). v1.1 forces these into a single file with mixed ownership; v1.2 should let each owner ship their slice independently while the operator composes them into one effective pack at apply time.
+The target use case is a service whose observability is genuinely co-owned by multiple parties — a contractually-driven slice (SLA, audit, governance), a platform-driven slice (vendor / infrastructure telemetry), and an application-driven slice (per-application SLIs and alerts). Today the spec forces these into a single file with mixed ownership; this RFC proposes that the spec let each owner ship their slice independently while the operator composes them into one effective pack at apply time.
 
-The proposal is intentionally additive. `metadata.imports` keeps its existing semantics. A new `metadata.composes` block opts a pack into sibling composition. Packs that don't use `composes` are unaffected.
+The proposal is intentionally additive. `metadata.imports` keeps its existing semantics. A new `metadata.composes` block would opt a pack into sibling composition. Packs that don't use `composes` would be unaffected.
 
 ---
 
@@ -41,7 +41,7 @@ These three groups have:
 - Different blast-radius tolerances (a misconfigured contractual alert is a regulatory event; a misconfigured application alert is a Slack-channel embarrassment).
 - Different on-call escalation paths.
 
-v1.1 makes all three slices share a single YAML file. That forces:
+Today the spec makes all three slices share a single YAML file. That forces:
 
 - All three owners to review every PR that touches any part of the pack.
 - One team's release cadence to bottleneck the others.
@@ -50,9 +50,9 @@ v1.1 makes all three slices share a single YAML file. That forces:
 
 ### 2.2 The mechanism is already half-built
 
-v1.1's `metadata.imports` is conceptually similar to what we want, but its merge semantics are wrong for this use case:
+The existing `metadata.imports` is conceptually similar to what we want, but its merge semantics are wrong for this use case:
 
-| | `imports` (v1.1) | `composes` (proposed v1.2) |
+| | `imports` | `composes` |
 |---|---|---|
 | Direction | Vertical (parent → child) | Horizontal (sibling ↔ sibling) |
 | Merge semantics | Overlay; later wins | Disjoint union; conflict = error |
@@ -60,7 +60,7 @@ v1.1's `metadata.imports` is conceptually similar to what we want, but its merge
 | ID collisions | Silently overridden | CI failure |
 | Ownership | Whoever owns the leaf | Whoever owns each contributing sibling |
 
-Both mechanisms coexist in v1.2. A sibling slice can still `imports` platform defaults; the parent aggregator just `composes` the siblings.
+Both mechanisms would coexist. A sibling slice can still `imports` platform defaults; the parent aggregator just `composes` the siblings.
 
 ---
 
@@ -165,7 +165,7 @@ The operator's `Resolve` stage gains a new `Compose` sub-stage when `composes` i
 4. **Check disjointness.** No two siblings may declare the same fully-namespaced ID. Collisions are CI errors.
 5. **Compose.** Build the effective pack by union: each section is the concatenation of that section's contributions across siblings. Map/object sections (e.g. `pipelines.exporters`) require an explicit conflict resolution policy — see §3.4.
 6. **Resolve cross-references.** Validate every `ref:`, `binds_to:`, `sli:`, `slo:`, `trigger:` resolves to a declared ID in the composed pack.
-7. **Validate the effective pack** against the full v1.2 schema and the conformance rubric. Tier-1 requirements apply to the *composed* pack, not to each sibling — a sibling alone need not be tier-1-conformant; only their composition must be.
+7. **Validate the effective pack** against the full schema and the conformance rubric. Tier-1 requirements apply to the *composed* pack, not to each sibling — a sibling alone need not be tier-1-conformant; only their composition must be.
 
 ### 3.4 Singleton sections
 
@@ -187,7 +187,7 @@ metadata:
     spec.baselines:             exclusive_to: kx-exchange-sla    # SLA owns the contractual targets
 ```
 
-Three resolution modes in v1.2:
+Three resolution modes:
 
 - `exclusive_to: <sibling>` — exactly one sibling may declare this section; others MUST NOT.
 - `merge_by_<key>` — union the entries, but each entry's `<key>` must be unique across siblings.
@@ -277,9 +277,9 @@ Each team's PR cadence is independent. The aggregator owner advances pins after 
 
 ## 5. Migration path
 
-### 5.1 v1.1 packs are unchanged
+### 5.1 Existing packs are unchanged
 
-A pack without `metadata.composes` continues to behave exactly as v1.1 specifies. v1.2 is backwards compatible.
+A pack without `metadata.composes` continues to behave exactly as the spec specifies today. The proposal is backwards compatible.
 
 ### 5.2 Splitting an existing pack
 
@@ -293,7 +293,7 @@ Heuristic: the tool reads ownership/source annotations (the by-source diagram's 
 
 ### 5.3 Deprecation
 
-`composes` is opt-in. No v1.1 pack is forced to migrate. If the platform later mandates composition for tier-1 packs (unlikely), the deprecation cycle would be a year minimum.
+`composes` is opt-in. No existing pack is forced to migrate. If the platform later mandates composition for tier-1 packs (unlikely), the deprecation cycle would be a year minimum.
 
 ---
 
@@ -305,7 +305,7 @@ Keep one file; tag each item with `source` and `owner` metadata; use the conform
 
 - **Pros**: zero schema change beyond optional metadata fields; very low friction.
 - **Cons**: doesn't fix the review-cadence problem (still one PR for any change); doesn't enable independent release cadence; doesn't help CODEOWNERS in Git.
-- **Verdict**: useful complement, not a substitute. Could ship in v1.1.1 as a small additive change and coexist with v1.2 composition.
+- **Verdict**: useful complement, not a substitute. Could ship as a small additive change and coexist with composition.
 
 ### 6.2 Build-time concatenation (no schema change)
 
@@ -313,7 +313,7 @@ Keep one *effective* pack file; generate it from per-team source files via a bui
 
 - **Pros**: ships today, no spec change.
 - **Cons**: build step lives outside the platform — every team reinvents it; no validation of disjointness; cross-references are textual; no first-class ownership concept; the operator only sees the concatenated blob.
-- **Verdict**: viable as a stop-gap. Use it if v1.2 is more than a quarter away.
+- **Verdict**: viable as a stop-gap. Use it if this RFC is more than a quarter away.
 
 ### 6.3 Multiple packs per service (no aggregator)
 
@@ -357,12 +357,12 @@ Use a Kustomize-like mechanism where each "sibling" is a strategic merge patch o
 
 | Phase | Effort | Deliverable |
 |---|---|---|
-| 1. Schema additions | ~1 week | v1.2 schema with `metadata.composes`, `metadata.contributes`, `metadata.namespace`, aggregator `resolution` block |
+| 1. Schema additions | ~1 week | next-revision schema with `metadata.composes`, `metadata.contributes`, `metadata.namespace`, aggregator `resolution` block |
 | 2. Composer logic | ~2 weeks | `packtool compose`, `packtool validate` extended to compose first |
 | 3. Operator support | ~2 weeks | Operator's `Resolve` stage gains the compose step; conformance attribution surfaces sibling provenance |
 | 4. CLI ergonomics | ~1 week | `packtool lint --sibling`, helpful error messages for namespace/contributes/disjointness violations |
 | 5. Documentation + examples | ~1 week | `examples/composed-payment-service/` with three siblings; spec amendment |
-| 6. Optional: `packtool split` | ~1 week | Heuristic splitter from an annotated v1.1 pack |
+| 6. Optional: `packtool split` | ~1 week | Heuristic splitter from an annotated existing pack |
 
 Total: ~7-8 weeks of focused work. Phase 1+2 alone is enough to support an early adopter who's willing to write the composer by hand; phase 3 is required for general availability.
 
@@ -431,7 +431,7 @@ Please file comments as GitHub issues with the `rfc-0001` label, or comment dire
 }
 ```
 
-The above is illustrative. The full schema lands with the v1.2 release; the only contract this RFC commits to is the *names* and *semantics* of these fields.
+The above is illustrative. The full schema lands with the next spec revision; the only contract this RFC commits to is the *names* and *semantics* of these fields.
 
 ---
 

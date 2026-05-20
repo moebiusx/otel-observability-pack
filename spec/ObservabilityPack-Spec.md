@@ -1,11 +1,10 @@
-# ObservabilityPack v1.1 — Platform Engineering Standard
+# ObservabilityPack — Platform Engineering Standard
 
 | | |
 |---|---|
-| Version | 1.1.0 |
 | Status | Draft for review |
 | Author | Carlos (Platform Engineering Lead) |
-| First publication | 2026-05-08 (v1.0) · 2026-05-12 (v1.1 OTel binding) |
+| First publication | 2026-05-08 |
 | Default binding | `otel-elastic-prometheus-grafana` |
 | Audience | Service owners, SREs, platform engineers, security & compliance, leadership |
 
@@ -17,7 +16,7 @@ Observability is one of the most fragmented surfaces in modern platform engineer
 
 The ObservabilityPack is the platform's answer to that fragmentation. It is a single, declarative, versioned manifest that binds every observability concern for a given service into one artifact, with referential integrity enforced at change time. One service equals one pack. Anything observable about that service — from the SLI math, to the OTel pipeline that produces the underlying signals, to the dashboard panel that visualises it, to the burn-rate alert that fires, to the channel it routes to, to the automated remediation that runs, to the chaos experiment that periodically validates the loop — is described, reviewed, and shipped together.
 
-This document defines the v1.1 contract for an ObservabilityPack: its conceptual model, its schema, the lifecycle and governance rules around it, and the reference implementation that the platform provides. **v1.1 introduces an explicit OpenTelemetry binding** — instrumentation is OTel, metrics live in Prometheus, logs and traces live in Elasticsearch, dashboards live in Grafana. The abstract model from v1.0 is preserved; only the realisation is pinned.
+This document defines the contract for an ObservabilityPack: its conceptual model, its schema, the lifecycle and governance rules around it, and the reference implementation that the platform provides. The standard pins an explicit **OpenTelemetry binding** as its default realisation — instrumentation is OTel, metrics live in Prometheus, logs and traces live in Elasticsearch, dashboards live in Grafana. The abstract model and the binding are documented separately so additional bindings can land without altering the model.
 
 ### 1.1 Goals
 
@@ -29,9 +28,17 @@ This document defines the v1.1 contract for an ObservabilityPack: its conceptual
 
 ### 1.2 Non-goals
 
-- This standard does not prescribe a single vendor for all time. v1.1 pins OTel + Prometheus + Elasticsearch + Grafana via the default binding, but additional bindings (e.g. `otel-grafanalabs`, `otel-aws-managed`) can be added without altering the abstract model.
+- This standard does not prescribe a single vendor for all time. The default binding pins OTel + Prometheus + Elasticsearch + Grafana, but additional bindings (e.g. `otel-grafanalabs`, `otel-aws-managed`) can be added without altering the abstract model.
 - It does not replace incident management, post-mortem, or change management processes. It feeds them; it does not substitute for them.
 - It does not cover business KPIs or product analytics. Those belong in a separate analytics surface; the pack covers operational signals.
+
+### 1.3 Versioning
+
+The standard itself is unversioned — this document is the current contract. Three independent versioning axes do appear inside the contract and should not be confused with one another:
+
+- **`apiVersion: observability.platform/v1`** — the stable API surface for pack manifests, in the Kubernetes-style sense. A breaking change to the manifest shape would bump this to `v2`.
+- **`metadata.version`** on each pack — SemVer per pack instance, owned by the service team. Bumped on every pack change. Unrelated to the spec.
+- **Binding name** (currently `otel-elastic-prometheus-grafana`) — the realisation contract for a specific stack. Future bindings live as separate documents under `bindings/` and do not bump the `apiVersion`.
 
 ---
 
@@ -77,7 +84,7 @@ kind: ObservabilityPack
 metadata:
   name: <service-slug>
   version: <semver>
-  binding: otel-elastic-prometheus-grafana    # NEW in v1.1
+  binding: otel-elastic-prometheus-grafana
   owners: [<team-slug>, ...]
   imports:
     - ref: <pack-ref>@<version>
@@ -86,10 +93,10 @@ metadata:
     environments: [prod, staging, ...]
     criticality: tier-1 | tier-2 | tier-3
 spec:
-  otel:        { ... }    # NEW in v1.1 — OTel instrumentation contract
+  otel:        { ... }    # OTel instrumentation contract
   slis:        [ ... ]
   slos:        [ ... ]
-  pipelines:   { ... }    # REPLACES v1.0 `collection:` — OTel-native
+  pipelines:   { ... }    # OTel-native (receivers / processors / exporters)
   storage:     { ... }
   queries:     { ... }
   dashboards:  [ ... ]
@@ -99,15 +106,6 @@ spec:
   baselines:   { ... }
   validation:  { ... }
 ```
-
-**Key v1.1 changes** vs v1.0:
-
-1. New required `spec.otel` block pinning SemConv version, mandatory resource attributes, SDK languages, sampling policy, propagators.
-2. `spec.collection` renamed and restructured as `spec.pipelines`, mirroring OTel Collector receivers/processors/exporters shape.
-3. `spec.storage` backends pinned to enums per binding: `prometheus | mimir | thanos` (metrics); `elasticsearch | opensearch | loki` (logs); `elasticsearch | tempo | jaeger` (traces).
-4. `spec.dashboards[].provider` is now an object with `kind`, `version`, `schemaVersion` (>= 39 for Grafana 11).
-5. SLIs MAY declare a `semconv_metric` field naming the canonical OTel metric.
-6. `metadata.binding` pins the realisation.
 
 See `bindings/otel-elastic-prometheus-grafana.md` for the full binding contract and worked artefact examples.
 
@@ -119,7 +117,7 @@ See `bindings/otel-elastic-prometheus-grafana.md` for the full binding contract 
 
 Defines the explicit reliability contract. The source of truth from which every downstream artifact derives. No other dimension may define a target value or threshold; targets live here and are referenced by ID.
 
-SLI types: `ratio`, `threshold`, `distribution`, `custom`. Each SLI MUST declare an id, a type, and the underlying query. v1.1 adds an optional `semconv_metric` field naming the canonical OTel SemConv metric.
+SLI types: `ratio`, `threshold`, `distribution`, `custom`. Each SLI MUST declare an id, a type, and the underlying query. An optional `semconv_metric` field names the canonical OTel SemConv metric.
 
 Each SLO MUST declare id, sli reference, objective (fraction), window (`7d`, `28d`, `30d`, or `90d`), and `error_budget_policy`.
 
@@ -129,7 +127,7 @@ Each SLO MUST declare id, sli reference, objective (fraction), window (`7d`, `28
 - MUST: every SLI is covered by at least one SLO.
 - SHOULD: SLO objectives are reviewed against historical data at least quarterly.
 
-### 5.2 Pipelines: OTel-native collection (L2 — v1.1 REPLACES v1.0 collection)
+### 5.2 Pipelines: OTel-native collection (L2)
 
 Defines how signals reach the platform via OpenTelemetry. The structure mirrors OTel Collector configuration so the operator renders it directly into Collector YAML.
 
@@ -157,7 +155,7 @@ The operator deploys two Collectors per cluster: an agent DaemonSet (per-node, O
 - MUST: any traces or logs containing PII declare a redaction pipeline.
 - SHOULD: cardinality budget (`expected_series_count`) declared per scrape job.
 
-### 5.3 OTel block (L2 — new in v1.1)
+### 5.3 OTel block (L2)
 
 Required block declaring the OpenTelemetry instrumentation contract:
 
@@ -252,7 +250,7 @@ Forecasts project SLO trajectory and trigger leading indicators. Three projectio
 
 ### 5.8 Alerting (L4)
 
-Routes triggered policy events to humans or automation. v1.1 supports `msteams`, `voice` (PagerDuty), `whatsapp`, `email` (audit only), and `webhook` channels. Routes are declared per severity (SEV1–SEV4), with channels ordered chat → voice → out-of-band.
+Routes triggered policy events to humans or automation. The default binding supports `msteams`, `voice` (PagerDuty), `whatsapp`, `email` (audit only), and `webhook` channels. Routes are declared per severity (SEV1–SEV4), with channels ordered chat → voice → out-of-band.
 
 Three suppression contexts: `maintenance_windows`, `deploy_freezes`, `dependency_outage`. Suppression MUST NOT silence the underlying alert in the audit log.
 
@@ -333,7 +331,7 @@ Packs live in the same repository as the service they govern, under `/observabil
 ### 6.2 CI gates
 
 Every PR modifying a pack MUST pass:
-1. JSON Schema validation against v1.1 schema.
+1. JSON Schema validation against the schema.
 2. Reference integrity: every `binds_to`, `ref:`, `trigger:` resolves.
 3. Conformance check against the pack's criticality tier.
 4. Cardinality estimation against staging.
@@ -392,7 +390,7 @@ Exceptions are time-bounded (default 90 days), reviewed by the platform engineer
 
 ---
 
-## 9. Reference implementation mapping (v1.1)
+## 9. Reference implementation mapping
 
 | Pack section | Generated artefact | Backend |
 |---|---|---|
@@ -441,22 +439,12 @@ The authoritative machine-readable spec is `schema/observability-pack.schema.jso
 
 ## Appendix B — Worked example
 
-A complete worked example for an HTTP API + Kafka consumer is `examples/payment-service.pack.yaml`. It demonstrates all v1.1 sections including the `otel:` block, OTel-native `pipelines:`, SemConv metric names, Elastic Synthetics with OTel-instrumented probes, and weekly production chaos.
+A complete worked example for an HTTP API + Kafka consumer is `examples/payment-service.pack.yaml`. It demonstrates all sections including the `otel:` block, OTel-native `pipelines:`, SemConv metric names, Elastic Synthetics with OTel-instrumented probes, and weekly production chaos.
 
 ## Appendix C — OTel binding contract
 
 The full binding contract for the default stack (OTel + Prometheus + Elasticsearch + Grafana) lives in `bindings/otel-elastic-prometheus-grafana.md`. It specifies exact stack version floors, OTel Collector YAML mappings, Elasticsearch ILM templates, Prometheus rule formats, and Grafana provisioning details.
 
-## Appendix D — v1.0 → v1.1 migration
-
-1. Add the `otel:` block at the top of `spec:` (required).
-2. Rename `spec.collection` to `spec.pipelines` and reshape into receivers/processors/exporters.
-3. Pin `metadata.binding: otel-elastic-prometheus-grafana`.
-4. Optionally rename SLI metric references to OTel SemConv names.
-5. Re-validate against the v1.1 schema; CI gate blocks non-conforming merges.
-
-Grace period: v1.0 packs accepted for 90 days after v1.1 publication. After that, the operator refuses to reconcile v1.0 manifests.
-
 ---
 
-*End of v1.1 spec.*
+*End of spec.*
