@@ -5,7 +5,7 @@
 | RFC | 0001 |
 | Title | Sibling composition of ObservabilityPacks |
 | Status | **Draft — request for comments** |
-| Author | Platform Engineering |
+| Author | KrystalineX Platform Engineering |
 | Created | 2026-05-13 |
 | Target version | next spec revision |
 | Discussion | issues/comments on the repo, or platform-engineering@ |

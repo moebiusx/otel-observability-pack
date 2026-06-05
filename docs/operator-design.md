@@ -9,7 +9,9 @@
 
 ## 1. Purpose
 
-The ObservabilityPack manifest is declarative and binding-aware. The operator is the controller that turns a pack into the concrete, native resources that the **OTel Collector**, **Prometheus**, **Elasticsearch**, **Grafana**, **Alertmanager**, **Argo Workflows**, and **Chaos Mesh** understand. It is the only component permitted to write to those backends; everything else reads pack manifests from Git.
+The ObservabilityPack manifest is declarative and binding-aware. The operator is a **meta-operator**: it turns a pack into intent for the operators and platform automation that already own the runtime. In SKE and bare Kubernetes clusters, it uses the **OpenTelemetry Operator**, **Prometheus Operator**, **Grafana Operator**, Elastic/storage operators, Alertmanager config controllers, **Argo Workflows / Events**, and **Chaos Mesh** as tools by writing their CRDs and watching their status. For Azure-hosted targets, it submits an approved pipeline run that applies the same effective pack through Azure-native IaC or automation rather than mutating Azure resources directly.
+
+The Pack Operator owns pack resolution, planning, orchestration, policy, and status. Tool operators own their native resources.
 
 This document describes the operator's responsibilities, control loops, reconciliation model, failure handling, and the contract it exposes to other platform components.
 
@@ -26,29 +28,39 @@ This document describes the operator's responsibilities, control loops, reconcil
                                                    ▼
                                        ┌─────────────────────────┐
                                        │  Pack Operator          │
-                                       │  (Kubernetes controller)│
+                                       │  (meta-operator)        │
                                        └────┬────────┬───────────┘
                                             │        │
    ┌────────────────────────────────────────┘        └────────────────────────────────────┐
    ▼                                                                                      ▼
 ┌──────────────────────┐  ┌─────────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│ OpenTelemetry Operator│ │ Prometheus + Mimir rules│  │ Grafana provisioning│  │ Alertmanager + PD   │
+│ OpenTelemetry Operator│ │ Prometheus Operator    │  │ Grafana Operator   │  │ Alertmanager + PD   │
 │ (Collector CR agents/ │ │ (vmalert-equiv ruler)   │  │ (folder per pack)   │  │ (routes + receivers)│
 │  gateway, Instr CRs)  │ │                         │  │                     │  │                     │
 └──────────────────────┘  └─────────────────────────┘  └─────────────────────┘  └─────────────────────┘
 ┌──────────────────────┐  ┌─────────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│ Elasticsearch ILM    │  │ Argo Workflows + Sensors│  │ Chaos Mesh CRDs     │  │ Elastic Synthetics  │
-│  + index templates   │  │ (self-healing)          │  │ (validation)        │  │ + blackbox-exporter │
+│ Elastic/storage ops  │  │ Argo Workflows + Events│  │ Chaos Mesh Operator │  │ Azure pipeline tool │
+│  + data policies     │  │ (self-healing)         │  │ (validation)       │  │ (cloud targets)     │
 └──────────────────────┘  └─────────────────────────┘  └─────────────────────┘  └─────────────────────┘
 ```
 
 Three logical components:
 
 1. **Pack Registry** — the in-cluster materialisation of every Git-stored pack, plus a derived index that lets reverse-lookup ("which packs depend on platform/std-alert-routes@3.0?") run in O(1).
-2. **Pack Operator** — a Kubernetes controller that watches the registry and reconciles each pack into per-section sub-controllers.
-3. **Sub-controllers** — one per backend, each owning a small, focused reconciliation against its target system.
+2. **Pack Operator** — a Kubernetes controller and meta-operator that watches the registry, resolves each pack, plans the effective desired state, and invokes the right tools.
+3. **Tool adapters** — one per target operator or automation surface. Adapters do not reimplement Prometheus, Grafana, OTel, Elastic, Argo, or Chaos Mesh; they write the CRDs or trigger the pipelines those systems already own.
 
-The split between the operator and the sub-controllers exists for blast-radius reasons: a bug in the chaos-experiment renderer should not be able to take down the alert routing pipeline.
+The split between the Pack Operator and tool adapters exists for blast-radius reasons: a bug in the chaos-experiment renderer should not be able to take down the alert routing pipeline.
+
+### 2.1 Execution targets
+
+| Target | Execution mode | Pack Operator action | Tool surface |
+|---|---|---|---|
+| SKE | In-cluster meta-operator | Write tool CRDs, set owner labels, watch status, update `Pack.status` | OpenTelemetry Operator, Prometheus Operator, Grafana Operator, storage operators, Alertmanager config controllers, Argo, Chaos Mesh |
+| Bare Kubernetes | In-cluster meta-operator | Same as SKE, with capability discovery for whichever tool operators are installed | Same tool contracts, degraded gracefully when a tool is absent |
+| Azure | Pipeline tool | Create an auditable pipeline invocation from the effective pack; watch the run result; surface success/failure in `Pack.status` | Azure DevOps or GitHub Actions pipeline applying Azure-native IaC, policy, dashboards, alerts, and integrations |
+
+The common contract is the **effective pack**. SKE and bare Kubernetes consume it through Kubernetes CRDs. Azure consumes it through a pipeline payload so cloud changes remain reviewable and governed by the existing Azure release controls.
 
 ---
 
@@ -79,15 +91,15 @@ The Plan stage is idempotent and side-effect-free; it is exposed as a dry-run mo
 
 ### 3.3 Removal
 
-Deleting a pack triggers a cascade through every sub-controller in reverse order: chaos and synthetic first (so we stop generating alerts), then alerting routes (so we stop notifying), then dashboards, then recording rules, and finally scrape jobs. The order matters — if we tear down recording rules before alerts, the alerts go silent for the wrong reason.
+Deleting a pack triggers a cascade through every tool adapter in reverse order: chaos and synthetic first (so we stop generating alerts), then alerting routes (so we stop notifying), then dashboards, then recording rules, and finally scrape jobs. The order matters — if we tear down recording rules before alerts, the alerts go silent for the wrong reason.
 
 ---
 
-## 4. Sub-controllers
+## 4. Tool adapters
 
-Each sub-controller owns one section of the pack and one backend. They share a common framework: a label-scoped owner reference, a finalizer, and a status sub-resource that surfaces reconciliation health back to the parent `Pack`.
+Each tool adapter owns one section of the pack and one downstream tool contract. For Kubernetes targets, that contract is normally a CRD owned by another operator. For Azure targets, it is a pipeline payload and run status. They share a common framework: a label-scoped owner reference, a finalizer or pipeline correlation ID, and a status sub-resource that surfaces reconciliation health back to the parent `Pack`.
 
-### 4.1 SLI / SLO sub-controller
+### 4.1 SLI / SLO adapter
 
 **Owns:** `spec.slis`, `spec.slos`
 **Renders to:** Sloth `PrometheusServiceLevel` CRDs (or OpenSLO custom resources where Sloth is unavailable).
@@ -97,7 +109,7 @@ Responsibilities:
 - Materialise each SLO with its objective and window. The error-budget burn-rate recording rules follow.
 - Resolve `error_budget_policy` references (typically to a platform-default policy) and inline the policy into the generated CRD.
 
-### 4.1b OTel sub-controller
+### 4.1b OTel adapter
 
 **Owns:** `spec.otel`
 **Renders to:** OpenTelemetry Operator `Instrumentation` CRs + gateway Collector validation rules.
@@ -108,7 +120,7 @@ Responsibilities:
 - Configure the gateway Collector with a validation policy that drops or flags telemetry missing any attribute in `resource_attributes.required`. The default action is `flag-and-emit-anomaly-metric`; tier-1 packs may upgrade to `drop`.
 - Pin the SemConv version: the operator refuses to reconcile a pack whose `otel.semconv` is below the binding's floor or above the latest known release.
 
-### 4.2 Pipelines sub-controller
+### 4.2 Pipelines adapter
 
 **Owns:** `spec.pipelines`
 **Renders to:** OTel Collector configs (agent + gateway), via the OpenTelemetry Operator's `OpenTelemetryCollector` CR.
@@ -119,7 +131,7 @@ Responsibilities:
 - Validate that every declared SLI's `semconv_metric` is present in the OpenTelemetry Semantic Conventions for the pinned version. Unknown metric names are a hard reject — they typically indicate a typo or unintentional drift from SemConv.
 - Enforce cardinality protection: at apply time, compare the declared per-receiver series budget to the live Prometheus cardinality. Reject configs that would exceed 5x the budget without an explicit override.
 
-### 4.3 Storage sub-controller
+### 4.3 Storage adapter
 
 **Owns:** `spec.storage`
 **Renders to:** Prometheus retention flags + Mimir/Thanos remote_write configs (metrics); Elasticsearch index templates + ILM policies + data streams (logs and traces).
@@ -130,7 +142,7 @@ Responsibilities:
 - **Traces:** same pattern as logs, but using the `traces-apm-default` data stream and `std-traces-ilm-14d` ILM policy by default. Tail sampling decisions are recorded as a span attribute so investigators know why a trace was kept.
 - Validate retention against compliance constraints stored in the platform's data-classification registry — a pack labelled `pii_class: high` cannot declare a logs retention longer than the regulatory ceiling.
 
-### 4.4 Queries sub-controller
+### 4.4 Queries adapter
 
 **Owns:** `spec.queries.recording_rules`, `spec.queries.derived_views`
 **Renders to:** vmalert recording-rule files.
@@ -139,7 +151,7 @@ Responsibilities:
 - Produce recording rules with `ref:slis.<id>` references resolved against the pack's SLI definitions.
 - Validate that every recording rule's expression parses as a valid MetricsQL/PromQL expression at apply time.
 
-### 4.5 Dashboards sub-controller
+### 4.5 Dashboards adapter
 
 **Owns:** `spec.dashboards`
 **Renders to:** Grafana provisioned dashboards.
@@ -149,7 +161,7 @@ Responsibilities:
 - For template-based dashboards, fetch the platform template, apply parameters, and PUT.
 - Tag every dashboard with `pack=<name>` and `version=<version>` for ownership traceability.
 
-### 4.6 Policy sub-controller
+### 4.6 Policy adapter
 
 **Owns:** `spec.policy`
 **Renders to:** vmalert alert rules.
@@ -158,7 +170,7 @@ Responsibilities:
 - Generate multi-window burn-rate alert rules following the pattern from the SRE workbook: `(burn_rate_short > factor) AND (burn_rate_long > factor)`.
 - Generate forecast alert rules for declared forecasts (Holt-Winters projections evaluated by the platform's forecasting service, exposed as derived metrics).
 
-### 4.7 Alerting sub-controller
+### 4.7 Alerting adapter
 
 **Owns:** `spec.alerting`
 **Renders to:** Alertmanager routing trees, PagerDuty service mappings.
@@ -168,7 +180,7 @@ Responsibilities:
 - Provision PagerDuty services and integration keys via the PagerDuty API for any pack declaring a `voice:` channel; rotate keys on a quarterly schedule.
 - Apply suppression contexts: `maintenance_windows` come from a platform CR; `deploy_freezes` come from the change-management system; `dependency_outage` is auto-applied when an upstream pack's primary SLO breaches.
 
-### 4.8 Remediation sub-controller
+### 4.8 Remediation adapter
 
 **Owns:** `spec.remediation`
 **Renders to:** Argo Workflows `WorkflowTemplate` + `EventSource` + `Sensor` resources.
@@ -177,7 +189,7 @@ Responsibilities:
 - For each remediation, materialise an Argo Events Sensor that listens for the alert webhook and triggers the named WorkflowTemplate.
 - Materialise guardrails as preconditions in the Sensor: `max_invocations_per_hour` becomes a rate-limited Sensor trigger; `requires_human_above` becomes a conditional that pauses the workflow for approval at higher severities; `circuit_breaker` is a counter resource that the Sensor checks before firing.
 
-### 4.9 Baselines sub-controller
+### 4.9 Baselines adapter
 
 **Owns:** `spec.baselines`
 **Renders to:** A platform observability service that derives MTTD/MTTR continuously.
@@ -186,7 +198,7 @@ Responsibilities:
 - Subscribe to alert-fired events and incident-management lifecycle events; compute MTTD and MTTR per incident; aggregate to p50 and p95 over a rolling 30-day window.
 - Compare against declared targets; if rolling p50/p95 breaches the target, write the regression to the pack's `.status` and (per `regression_gate`) signal the release gate.
 
-### 4.10 Validation sub-controller
+### 4.10 Validation adapter
 
 **Owns:** `spec.validation`
 **Renders to:** Chaos Mesh `Workflow` CRDs, Blackbox/Checkly probe configs, scheduled CronJobs that orchestrate experiment runs.
@@ -202,7 +214,7 @@ Responsibilities:
 
 ### 5.1 Change ordering and atomicity
 
-Within a single reconciliation, sub-controllers apply in this order:
+Within a single reconciliation, tool adapters apply in this order:
 
 1. SLI/SLO (and recording rules) — produce the data.
 2. Storage — ensure retention is in place before alerts depend on it.
@@ -217,7 +229,7 @@ If any stage fails, downstream stages are skipped for this pack and the pack's `
 
 ### 5.2 Drift detection
 
-A periodic reconcile (default 5m) compares the live state of every sub-controller's target backend against the desired state derived from the pack. Any out-of-band change is reverted, with the diff logged to an audit channel. This is what enforces the rule that direct edits in Grafana, Alertmanager, etc. are non-binding.
+A periodic reconcile (default 5m) compares the live state of every tool adapter's target backend against the desired state derived from the pack. Any out-of-band change is reverted through the owning tool operator or surfaced as drift on the Azure pipeline run, with the diff logged to an audit channel. This is what enforces the rule that direct edits in Grafana, Alertmanager, etc. are non-binding.
 
 ### 5.3 Multi-tenant isolation
 
@@ -237,10 +249,10 @@ The operator and the pack schema are versioned independently. Backwards compatib
 
 | Failure | Detection | Mitigation |
 |---|---|---|
-| Sub-controller panics on a malformed pack | Operator metrics + Kubernetes restart loop | Validation in pack lint should make this rare; a panic is treated as a P1 platform incident. |
-| Backend unavailable (Grafana down) | Apply-stage error | Pack status set to `Degraded`; reconciliation retried with exponential backoff; alerts already in place continue to fire. |
+| Tool adapter panics on a malformed pack | Operator metrics + Kubernetes restart loop | Validation in pack lint should make this rare; a panic is treated as a P1 platform incident. |
+| Tool operator or pipeline unavailable (Grafana Operator down, Azure pipeline unavailable) | Apply-stage error or pipeline run failure | Pack status set to `Degraded`; reconciliation retried with exponential backoff; alerts already in place continue to fire. |
 | Cardinality explosion mid-reconcile | Cardinality probe at apply time | Apply rejected; pack status set to `Blocked`; PagerDuty notification to the platform team. |
-| Drift loop with a downstream tool | Drift events per minute exceeds threshold | Sub-controller pauses drift correction for the affected resource and surfaces the conflict for human review. |
+| Drift loop with a downstream tool | Drift events per minute exceeds threshold | Tool adapter pauses drift correction for the affected resource and surfaces the conflict for human review. |
 | Schema-only changes that the running operator can't parse | Pack lint at PR time uses operator-shipped schema | Operator and schema are released together; service teams may pin their `packlint` to the operator version they target. |
 | Imported pack version goes missing | Resolve stage error | Pack status set to `Degraded`; uses last successfully-applied effective pack until the import is restored. |
 
@@ -257,7 +269,7 @@ The operator and the pack schema are versioned independently. Backwards compatib
 ## 8. Implementation notes
 
 - **Language:** Go, using controller-runtime for the controller framework.
-- **CRDs:** `Pack`, `EffectivePack` (read-only, post-import resolution), per-backend status CRs (`PackSlothStatus`, `PackGrafanaStatus`, etc.).
+- **CRDs:** `Pack`, `EffectivePack` (read-only, post-import resolution), `PackToolRun` (one status record per tool invocation), and per-tool status CRs (`PackPrometheusStatus`, `PackGrafanaStatus`, `PackAzurePipelineStatus`, etc.).
 - **Storage of last-applied state:** Annotation on each native resource (`platform.observability/last-applied-hash`), plus a per-pack ConfigMap snapshot for diffing.
-- **Testing:** Each sub-controller has a fake-backend test rig; integration tests run the full operator against ephemeral instances of VictoriaMetrics, Grafana, Alertmanager, and Chaos Mesh in CI.
+- **Testing:** Each tool adapter has a fake-backend test rig; integration tests run the full operator against ephemeral SKE-like and bare-Kubernetes clusters with Prometheus Operator, Grafana Operator, OpenTelemetry Operator, Alertmanager config, Argo, and Chaos Mesh installed. Azure tests assert the generated pipeline payload and run-status handling.
 - **Rollout:** the operator is deployed by the platform itself via the same GitOps flow it serves, with the meta-pack as its first-class governance.

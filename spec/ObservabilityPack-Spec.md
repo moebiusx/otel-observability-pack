@@ -2,9 +2,11 @@
 
 | | |
 |---|---|
+| Spec version | 1.2 |
 | Status | Draft for review |
-| Author | Carlos (Platform Engineering Lead) |
+| Author | Carlos Montero  |
 | First publication | 2026-05-08 |
+| Last updated | 2026-06-05 |
 | Default binding | `otel-elastic-prometheus-grafana` |
 | Audience | Service owners, SREs, platform engineers, security & compliance, leadership |
 
@@ -34,11 +36,13 @@ This document defines the contract for an ObservabilityPack: its conceptual mode
 
 ### 1.3 Versioning
 
-The standard itself is unversioned — this document is the current contract. Three independent versioning axes do appear inside the contract and should not be confused with one another:
+This document — the standard itself — carries an explicit **spec version** (see the header table; currently **1.2**), a two-part `major.minor` number: the minor part moves for backward-compatible additions and clarifications, the major part for breaking changes to the contract. The lineage: **1.0** was the generic observability standard; **1.1** added the OpenTelemetry instrumentation contract as a separate concern; **1.2** consolidates the two into this single unified document. Because the consolidation preserves the manifest contract (`apiVersion` stays `observability.platform/v1` and existing packs still validate), it is a backward-compatible minor bump rather than a breaking `2.0`. Beyond the spec version, five independent versioning axes appear inside the contract and should not be confused with one another:
 
-- **`apiVersion: observability.platform/v1`** — the stable API surface for pack manifests, in the Kubernetes-style sense. A breaking change to the manifest shape would bump this to `v2`.
+- **Spec version** (`1.2`) — the version of this prose standard, in the header table. Owned by the platform engineering team. `major.minor`; bumped whenever this document changes.
+- **`apiVersion: observability.platform/v1`** — the stable API surface for pack manifests, in the Kubernetes-style sense. A breaking change to the manifest shape would bump this to `v2`. Tracks the spec's major version but is not identical to it: an editorial spec patch does not move `apiVersion`.
 - **`metadata.version`** on each pack — SemVer per pack instance, owned by the service team. Bumped on every pack change. Unrelated to the spec.
 - **Binding name** (currently `otel-elastic-prometheus-grafana`) — the realisation contract for a specific stack. Future bindings live as separate documents under `bindings/` and do not bump the `apiVersion`.
+- **Backend product versions** — each telemetry backend declares its product version and an optional gating policy (`off` / `warn` / `enforce`). This is a per-backend axis that drives compatibility checking against the platform's capability model, not the pack or spec version. See §5.12.3.
 
 ---
 
@@ -92,14 +96,22 @@ metadata:
     service: <service-id>
     environments: [prod, staging, ...]
     criticality: tier-1 | tier-2 | tier-3
+    default_target: ske | bare-k8s | azure
 spec:
   otel:        { ... }    # OTel instrumentation contract
+  telemetry:   { ... }    # generalised, multi-product backend catalog (§5.12.1)
+  environments:{ ... }    # per-environment overlays (§5.12.2)
   slis:        [ ... ]
   slos:        [ ... ]
   pipelines:   { ... }    # OTel-native (receivers / processors / exporters)
   storage:     { ... }
   queries:     { ... }
   dashboards:  [ ... ]
+  profiling:   { ... }    # continuous profiling, e.g. Pyroscope (§5.12.4)
+  network:     { ... }    # eBPF / network observability, e.g. Cilium (§5.12.4)
+  policy_engine:{ ... }   # policy-as-code, e.g. OPA (§5.12.4)
+  mesh:        [ ... ]    # service mesh / gateways: Envoy/Consul/Kong/Traefik (§5.12.4)
+  collection:  [ ... ]    # collection pipelines: Fluent Bit/Beats/Vector/Alloy (§5.12.4)
   policy:      { ... }
   alerting:    { ... }
   remediation: [ ... ]
@@ -319,6 +331,83 @@ validation:
 - MUST: a chaos experiment that fails to trigger the expected alert within `expected_mttd` is recorded as failed.
 - SHOULD (tier-1): chaos runs weekly in production with blast-radius controls.
 - SHOULD (tier-1): synthetic probes are OTel-instrumented (`otel_instrumentation: true`).
+
+### 5.12 Backends, environments, and version gating (cross-cutting)
+
+The original ten dimensions assume a single default stack. As the platform's observability surface grows — additional trace backends (Zipkin, SkyWalking, Pinpoint), metrics stores (InfluxDB, OpenTSDB), log stores (ClickHouse, Graylog), continuous profiling, eBPF/network observability, policy-as-code, service mesh, API gateways, and collection pipelines — the pack needs a generalised way to name *which product, which version, and which environment*. These cross-cutting blocks supply that without altering the L1–L5 model. They are optional; a minimal pack omits them and inherits the default binding.
+
+#### 5.12.1 Telemetry backend catalog
+
+`spec.telemetry.backends` is a list of named, versioned backend instances. Each declares a `signal` class (`metrics`, `logs`, `traces`, `profiles`, `network`, `policy`, `mesh`, `gateway`, `collection`, `alerting`, `dashboards`), a `product` (open registry — see below), one or more `endpoints` (tried in order for failover), an optional `auth` block, and an optional `version` policy. Backends are referenced elsewhere in the pack by `id`.
+
+```yaml
+telemetry:
+  backends:
+    - id: metrics-prom
+      signal: metrics
+      product: prometheus
+      version: { declared: "2.55", min: "2.53", gating: warn }
+      endpoints: [https://prom-a.internal:9090, https://prom-b.internal:9090]   # failover order
+      auth: { kind: bearer, secretRef: prometheus-token }
+      tenant: payments
+      default: true
+```
+
+`auth.kind` is one of `none`, `bearer`, `basic`, `header`, `serviceaccount`. Credentials are **never inlined** — `secretRef` names a Kubernetes secret, consistent with the operator's existing credential handling. Named `instances` under a backend model the MCP server's multi-instance, SSRF-safe `target` selection.
+
+**Open product registry.** The `product` field is pattern-validated, not enum-locked. Products the platform's MCP server can address are recognised by lint; an unknown value is **accepted** but flagged (`registry/unknown_product`) so typos surface without blocking a genuinely new backend.
+
+#### 5.12.2 Environments
+
+`spec.environments` replaces the flat environment list with per-environment overlays. Each environment may set its execution `target` (`ske`, `bare-k8s`, `azure`), override `criticality`, wire `backends` by signal to catalog ids, apply dotted-path `overrides` (e.g. retention, sampling), declare `suppress` contexts, and set a `promote_after` window.
+
+```yaml
+environments:
+  prod:
+    target: ske
+    criticality: tier-1
+    backends: { metrics: metrics-prom, logs: logs-es, traces: traces-es }
+    overrides: { storage.metrics.retention: 13mo, otel.sdk.sampling.ratio: 0.1 }
+    promote_after: 30d
+  staging:
+    target: bare-k8s
+    criticality: tier-2
+    overrides: { otel.sdk.sampling.ratio: 1.0 }
+    suppress: [deploy_freezes]
+```
+
+#### 5.12.3 Version gating
+
+Every product reference may carry a `version` policy: `declared`, optional `min`/`max` bounds, a `gating` mode, and required protocol `capabilities`. The gating mode maps 1:1 to the MCP server's `MCP_VERSION_GATING`:
+
+| `gating` | Lint behaviour when `declared` is outside `[min, max]` |
+|---|---|
+| `off` | skipped |
+| `warn` (default) | warning finding |
+| `enforce` | error finding — blocks the CI gate |
+
+An absent or unparseable version passes optimistically, matching the server's runtime behaviour. Storage blocks accept the same policy via sibling `min_version` / `gating` fields.
+
+**Conformance:**
+- MUST: every backend named in `spec.telemetry.backends` declares a `product` and a `signal`.
+- MUST: every environment `backends` reference and every signal-dimension `backend` reference resolves to a declared backend id.
+- SHOULD: tier-1 backends pin a `min` version with `gating: enforce`.
+
+#### 5.12.4 Extended technology surfaces
+
+Optional dimensions for surfaces the MCP server exposes beyond metrics/logs/traces. Each references a catalog backend by id and may carry its own version policy:
+
+| Block | Products | Purpose |
+|---|---|---|
+| `profiling` | Pyroscope | Continuous CPU/heap profiling |
+| `network` | Cilium | eBPF endpoint/identity/policy/flow observability |
+| `policy_engine` | OPA | Policy-as-code bundles and decisions |
+| `mesh` | Envoy, Consul, Kong, Traefik | Service mesh proxies, service discovery, API gateways |
+| `collection` | Fluent Bit, Beats, Vector, Alloy | Telemetry collection pipelines (alternative/complement to the OTel Collector) |
+
+**Conformance:**
+- MUST: every extended-surface `backend` reference resolves to a declared backend.
+- SHOULD: products carry a `version` policy when the binding pins a floor for them.
 
 ---
 

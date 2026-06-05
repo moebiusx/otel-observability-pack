@@ -1,9 +1,10 @@
 # ObservabilityPack — OTel Binding for Prometheus / Elasticsearch / Grafana
 
 **Binding ID:** `otel-elastic-prometheus-grafana`
+**Spec version:** `1.2`
 **Pack apiVersion:** `observability.platform/v1`
 **Status:** Draft for review
-**Owner:** Platform Engineering — Observability Practice
+**Owner:** KrystalineX Platform Engineering — Observability Practice
 
 ---
 

@@ -12,7 +12,8 @@ One service = one pack = one PR to change anything observable about it.
 
 | | |
 |---|---|
-| Author | Carlos (Platform Engineering Lead) & Claude Code - Session ID: |
+| Spec version | 1.2 |
+| Author | Carlos Montero |
 | Status | Draft for review |
 | First publication | 2026-05-08 |
 | Default binding | `otel-elastic-prometheus-grafana` |
@@ -50,7 +51,7 @@ otel-observability-pack/
 
 ## The model in one paragraph
 
-The pack is organised as four concentric layers — **L1 Contract** (SLIs/SLOs), **L2 Telemetry** (OTel pipelines + storage), **L3 Insight** (queries + dashboards), **L4 Action** (policy + alerting + self-healing) — wrapped by a fifth, orthogonal layer, **L5 Validation** (chaos, synthetic probes, MTTD/MTTR baselines), that proves the four below it actually work. A `Pack` custom resource is reconciled by a Kubernetes operator into native artefacts (OTel Collector configs, Prometheus rule groups, Grafana dashboards, Alertmanager routes, Elasticsearch ILM policies, Argo Workflow templates, Chaos Mesh experiments, Elastic Synthetics monitors), with referential integrity enforced at CI time.
+The pack is organised as four concentric layers — **L1 Contract** (SLIs/SLOs), **L2 Telemetry** (OTel pipelines + storage), **L3 Insight** (queries + dashboards), **L4 Action** (policy + alerting + self-healing) — wrapped by a fifth, orthogonal layer, **L5 Validation** (chaos, synthetic probes, MTTD/MTTR baselines), that proves the four below it actually work. A `Pack` custom resource is reconciled by the ObservabilityPack Operator, a meta-operator that uses other operators and automation surfaces as tools: in SKE and bare Kubernetes it writes OpenTelemetry Operator, Prometheus Operator, Grafana Operator, Alertmanager, storage, Argo, and Chaos Mesh resources; for Azure targets it emits an auditable pipeline invocation that applies the same effective pack through Azure-native automation. Referential integrity is enforced at CI time.
 
 The default binding pins an explicit **OTel realisation**: instrumentation is OpenTelemetry, metrics live in Prometheus, logs and traces live in Elasticsearch (Elastic APM-compatible), dashboards are in Grafana. See `bindings/otel-elastic-prometheus-grafana.md` for the full binding contract.
 
@@ -118,24 +119,6 @@ See `spec/ObservabilityPack-Spec.md` for the abstract model and `bindings/otel-e
 
 Full clause-level rubric in `docs/maturity-model.md`.
 
----
-
-## Roadmap
-
-| | |
-|---|---|
-| **Current** | **OTel-native standard with the Prometheus / Elastic / Grafana binding — abstract model, schema, example pack, operator design, maturity model** |
-| v1.2 | Field-feedback revisions after first organisation-wide adoption |
-| v2.0 | Multi-cluster federation, cost-aware retention recommendations, conformance attestation, alternate bindings (`otel-grafanalabs`, `otel-aws-managed`) |
 
 ---
 
-## Bootstrap (first time only)
-
-This folder is laid out by `setup.ps1`. The deliverable files were originally produced on the Desktop. Right-click `setup.ps1` → **Run with PowerShell** to copy them into the right subdirectories. Re-running is safe (it just refreshes).
-
----
-
-## License & ownership
-
-Owned by Platform Engineering. Contributions via pull request; SemVer-bumped on every change; quarterly review cadence.

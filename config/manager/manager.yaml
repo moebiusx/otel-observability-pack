@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-pack-operator
+  namespace: observability-pack-system
+  labels:
+    app.kubernetes.io/name: observability-pack-operator
+    app.kubernetes.io/component: meta-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-pack-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: observability-pack-operator
+        app.kubernetes.io/component: meta-operator
+    spec:
+      serviceAccountName: observability-pack-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: ghcr.io/moebiusx/observability-pack-operator:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-pack-operator-metrics
+  namespace: observability-pack-system
+  labels:
+    app.kubernetes.io/name: observability-pack-operator
+spec:
+  selector:
+    app.kubernetes.io/name: observability-pack-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
