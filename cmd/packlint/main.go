@@ -64,6 +64,7 @@ func main() {
 			os.Exit(2)
 		}
 		lint.Refs(p, r)
+		lint.Backends(p, r)
 		lint.Conformance(p, r)
 		results = append(results, r)
 		if r.HasErrors() {

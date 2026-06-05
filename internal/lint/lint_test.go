@@ -67,3 +67,71 @@ func TestConformanceProducesAllTiersForTier1(t *testing.T) {
 			len(r.Conformance.Tier3), len(r.Conformance.Tier2), len(r.Conformance.Tier1))
 	}
 }
+
+func TestBackendsPassIsCleanOnExample(t *testing.T) {
+	root := repoRoot(t)
+	p, err := pack.Load(filepath.Join(root, "examples", "payment-service.pack.yaml"))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := &lint.Result{}
+	lint.Backends(p, r)
+	for _, f := range r.Findings {
+		if f.Severity == lint.SeverityError {
+			t.Errorf("unexpected backends error: [%s] %s %s", f.Code, f.Path, f.Message)
+		}
+	}
+}
+
+func TestBackendsFlagsRegistryVersionAndRefs(t *testing.T) {
+	p := &pack.Pack{
+		Spec: pack.Spec{
+			Telemetry: pack.Telemetry{
+				Backends: []pack.Backend{
+					{ID: "m1", Signal: "metrics", Product: "prometheus",
+						Version: &pack.VersionSpec{Declared: "2.40", Min: "2.53", Gating: "enforce"}},
+					{ID: "x1", Signal: "logs", Product: "notareal",
+						Version: &pack.VersionSpec{Declared: "1.0", Min: "0.5", Gating: "warn"}},
+				},
+			},
+			Profiling: &pack.SignalBlock{Backend: "does-not-exist"},
+		},
+	}
+	r := &lint.Result{}
+	lint.Backends(p, r)
+
+	want := map[string]lint.Severity{
+		"versions/below_min":       lint.SeverityError, // enforce -> error
+		"registry/unknown_product": lint.SeverityWarn,
+		"backends/unresolved_ref":  lint.SeverityError,
+	}
+	got := map[string]lint.Severity{}
+	for _, f := range r.Findings {
+		got[f.Code] = f.Severity
+	}
+	for code, sev := range want {
+		if got[code] != sev {
+			t.Errorf("expected finding %q at severity %q; got %q", code, sev, got[code])
+		}
+	}
+}
+
+func TestBackendsGatingOffSkipsVersionCheck(t *testing.T) {
+	p := &pack.Pack{
+		Spec: pack.Spec{
+			Telemetry: pack.Telemetry{
+				Backends: []pack.Backend{
+					{ID: "p1", Signal: "profiles", Product: "pyroscope",
+						Version: &pack.VersionSpec{Declared: "0.1", Min: "9.9", Gating: "off"}},
+				},
+			},
+		},
+	}
+	r := &lint.Result{}
+	lint.Backends(p, r)
+	for _, f := range r.Findings {
+		if f.Code == "versions/below_min" {
+			t.Errorf("gating=off must skip version check, but got %s", f.Message)
+		}
+	}
+}

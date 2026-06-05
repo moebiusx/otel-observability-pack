@@ -45,18 +45,80 @@ type Import struct {
 }
 
 type Spec struct {
-	Otel        Otel           `json:"otel"`
-	SLIs        []SLI          `json:"slis"`
-	SLOs        []SLO          `json:"slos"`
-	Pipelines   Pipelines      `json:"pipelines"`
-	Storage     map[string]any `json:"storage,omitempty"`
-	Queries     Queries        `json:"queries"`
-	Dashboards  []Dashboard    `json:"dashboards"`
-	Policy      Policy         `json:"policy"`
-	Alerting    Alerting       `json:"alerting"`
-	Remediation []Remediation  `json:"remediation,omitempty"`
-	Baselines   Baselines      `json:"baselines"`
-	Validation  Validation     `json:"validation"`
+	Otel         Otel                   `json:"otel"`
+	SLIs         []SLI                  `json:"slis"`
+	SLOs         []SLO                  `json:"slos"`
+	Telemetry    Telemetry              `json:"telemetry,omitempty"`
+	Environments map[string]Environment `json:"environments,omitempty"`
+	Pipelines    Pipelines              `json:"pipelines"`
+	Storage      map[string]any         `json:"storage,omitempty"`
+	Queries      Queries                `json:"queries"`
+	Dashboards   []Dashboard            `json:"dashboards"`
+	Profiling    *SignalBlock           `json:"profiling,omitempty"`
+	Network      *SignalBlock           `json:"network,omitempty"`
+	PolicyEngine *SignalBlock           `json:"policy_engine,omitempty"`
+	Mesh         []Component            `json:"mesh,omitempty"`
+	Collection   []Component            `json:"collection,omitempty"`
+	Policy       Policy                 `json:"policy"`
+	Alerting     Alerting               `json:"alerting"`
+	Remediation  []Remediation          `json:"remediation,omitempty"`
+	Baselines    Baselines              `json:"baselines"`
+	Validation   Validation             `json:"validation"`
+}
+
+// Telemetry is the generalized, multi-product backend catalog. Each backend
+// names a product, a signal class, and an optional version/gating policy.
+type Telemetry struct {
+	Backends []Backend `json:"backends,omitempty"`
+}
+
+// Backend is one named, versioned telemetry backend instance.
+type Backend struct {
+	ID        string           `json:"id"`
+	Signal    string           `json:"signal"`
+	Product   string           `json:"product"`
+	Version   *VersionSpec     `json:"version,omitempty"`
+	Endpoints []string         `json:"endpoints,omitempty"`
+	Instances []map[string]any `json:"instances,omitempty"`
+	Auth      map[string]any   `json:"auth,omitempty"`
+	Tenant    string           `json:"tenant,omitempty"`
+	Default   bool             `json:"default,omitempty"`
+}
+
+// VersionSpec captures the declared product version plus an optional gating
+// policy, mirroring the MCP server's capability/version model.
+type VersionSpec struct {
+	Declared     string   `json:"declared,omitempty"`
+	Min          string   `json:"min,omitempty"`
+	Max          string   `json:"max,omitempty"`
+	Gating       string   `json:"gating,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+// Environment is a named deployment overlay (prod, staging, ...).
+type Environment struct {
+	Target       string            `json:"target,omitempty"`
+	Criticality  string            `json:"criticality,omitempty"`
+	Backends     map[string]string `json:"backends,omitempty"`
+	Overrides    map[string]any    `json:"overrides,omitempty"`
+	Suppress     []string          `json:"suppress,omitempty"`
+	PromoteAfter string            `json:"promote_after,omitempty"`
+}
+
+// SignalBlock is a thin reference from a signal dimension (profiling, network,
+// policy_engine) to a telemetry backend, with an optional version policy.
+type SignalBlock struct {
+	Backend string       `json:"backend,omitempty"`
+	Product string       `json:"product,omitempty"`
+	Version *VersionSpec `json:"version,omitempty"`
+}
+
+// Component is a mesh or collection-pipeline element.
+type Component struct {
+	Product string       `json:"product"`
+	Role    string       `json:"role,omitempty"`
+	Backend string       `json:"backend,omitempty"`
+	Version *VersionSpec `json:"version,omitempty"`
 }
 
 type Otel struct {

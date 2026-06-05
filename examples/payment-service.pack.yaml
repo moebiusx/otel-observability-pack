@@ -56,6 +56,82 @@ spec:
       log_correlation: true   # inject trace_id / span_id into structured logs
 
   # ---------------------------------------------------------------------------
+  # Telemetry backend catalog — named, versioned, multi-product instances.
+  # Each backend declares a product, a signal class, endpoints (failover
+  # order), an auth secret reference (never inlined), and a version-gating
+  # policy mirroring the MCP server's capability/version model.
+  # ---------------------------------------------------------------------------
+  telemetry:
+    backends:
+      - id: metrics-prom
+        signal: metrics
+        product: prometheus
+        version: { declared: "2.55", min: "2.53", gating: warn }
+        endpoints: [https://prom-a.internal:9090, https://prom-b.internal:9090]
+        auth: { kind: bearer, secretRef: prometheus-token }
+        tenant: payments
+        default: true
+      - id: logs-es
+        signal: logs
+        product: elasticsearch
+        version: { declared: "8.15", min: "8.13", gating: warn }
+        endpoints: [https://es.internal:9200]
+        auth: { kind: basic, secretRef: es-credentials }
+      - id: traces-es
+        signal: traces
+        product: elasticsearch
+        version: { declared: "8.15", min: "8.13", gating: warn }
+        endpoints: [https://es.internal:9200]
+        auth: { kind: basic, secretRef: es-credentials }
+      - id: profiles-pyroscope
+        signal: profiles
+        product: pyroscope
+        version: { declared: "1.7", gating: "off" }
+        endpoints: [https://pyroscope.internal:4040]
+      - id: mesh-envoy
+        signal: mesh
+        product: envoy
+        endpoints: [http://localhost:9901]
+      - id: net-cilium
+        signal: network
+        product: cilium
+        endpoints: [http://cilium-agent.kube-system:9879]
+        auth: { kind: serviceaccount }
+      - id: policy-opa
+        signal: policy
+        product: opa
+        endpoints: [http://opa.payments:8181]
+      - id: gw-kong
+        signal: gateway
+        product: kong
+        endpoints: [http://kong-admin.payments:8001]
+      - id: collect-vector
+        signal: collection
+        product: vector
+        endpoints: [http://vector.payments:8686]
+
+  # ---------------------------------------------------------------------------
+  # Environments — base criticality is tier-1; per-environment overlays adjust
+  # the execution target, criticality, backend wiring, and sampling.
+  # ---------------------------------------------------------------------------
+  environments:
+    prod:
+      target: ske
+      criticality: tier-1
+      backends: { metrics: metrics-prom, logs: logs-es, traces: traces-es }
+      overrides:
+        storage.metrics.retention: 13mo
+        otel.sdk.sampling.ratio: 0.1
+      promote_after: 30d
+    staging:
+      target: bare-k8s
+      criticality: tier-2
+      backends: { metrics: metrics-prom, logs: logs-es, traces: traces-es }
+      overrides:
+        otel.sdk.sampling.ratio: 1.0
+      suppress: [deploy_freezes]
+
+  # ---------------------------------------------------------------------------
   # 1. SLIs — referenced by OTel SemConv name; query is the materialised PromQL
   # ---------------------------------------------------------------------------
   slis:
@@ -222,6 +298,41 @@ spec:
       data_stream: traces-apm-default
       ilm_policy: ref:platform/std-traces-ilm-14d
       sampling: tail-based
+
+  # ---------------------------------------------------------------------------
+  # Additional observable surfaces — each references a telemetry backend by id.
+  # These are optional, binding-gated dimensions surfaced by the MCP server.
+  # ---------------------------------------------------------------------------
+  profiling:
+    backend: profiles-pyroscope
+    product: pyroscope
+    profile_types: [cpu, alloc_space, inuse_space]
+
+  network:
+    backend: net-cilium
+    product: cilium
+    observe: [endpoints, policy, services, flows]
+
+  policy_engine:
+    backend: policy-opa
+    product: opa
+    bundles: [payments/authz, payments/pci]
+
+  mesh:
+    - product: envoy
+      role: proxy
+      backend: mesh-envoy
+      version: { declared: "1.31", min: "1.28", gating: warn }
+    - product: kong
+      role: gateway
+      backend: gw-kong
+
+  collection:
+    - product: vector
+      role: aggregator
+      backend: collect-vector
+    - product: fluentbit
+      role: agent
 
   # ---------------------------------------------------------------------------
   # 5. Queries — recording rules in Prom rule-group form
