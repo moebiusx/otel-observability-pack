@@ -5,7 +5,7 @@
 // manifest embedded under spec.manifest. Used by the kind smoke driver
 // to avoid hand-maintaining a duplicate of the example manifest.
 //
-//	go run ./hack/smoke/wrap.go -f examples/payment-service.pack.yaml -name payments -namespace obs -target ske > hack/smoke/pack-cr.yaml
+//	go run ./test/smoke/wrap.go -f examples/payment-service.pack.yaml -name payments -namespace obs -target ske > test/smoke/pack-cr.yaml
 package main
 
 import (
