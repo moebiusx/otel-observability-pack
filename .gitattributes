@@ -1,4 +1,4 @@
-﻿# Cross-platform line-ending policy:
+# Cross-platform line-ending policy:
 # Normalise text files to LF in the repo; on Windows checkout, git can render
 # them either way. Binaries are marked explicitly so git never touches them.
 
