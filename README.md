@@ -8,23 +8,12 @@ One service = one pack = one PR to change anything observable about it.
 
 ---
 
-## Status
-
-| | |
-|---|---|
-| Spec version | 1.2 |
-| Author | Carlos Montero |
-| Status | Draft for review |
-| First publication | 2026-05-08 |
-| Default binding | `otel-elastic-prometheus-grafana` |
-
----
-
 ## Layout
 
 ```
 otel-observability-pack/
 ├── README.md                       <- you are here
+|
 ├── spec/                           <- the standard itself
 │   └── ObservabilityPack-Spec.md                 (Markdown, renders on GitHub)
 │
@@ -117,6 +106,18 @@ See `spec/ObservabilityPack-Spec.md` for the abstract model and `bindings/otel-e
 
 Full clause-level rubric in `docs/maturity-model.md`.
 
+
+---
+
+## Status
+
+| | |
+|---|---|
+| Spec version | 1.2 |
+| Author | Carlos Montero |
+| Status | Draft for review |
+| First publication | 2026-05-08 |
+| Default binding | `otel-elastic-prometheus-grafana` |
 
 ---
 
