@@ -2,9 +2,11 @@
 
 | | |
 |---|---|
+| Spec version | 1.2 |
 | Status | Draft for review |
-| Author | Carlos (Platform Engineering Lead) |
+| Author | Carlos Montero  |
 | First publication | 2026-05-08 |
+| Last updated | 2026-06-05 |
 | Default binding | `otel-elastic-prometheus-grafana` |
 | Audience | Service owners, SREs, platform engineers, security & compliance, leadership |
 
@@ -34,9 +36,10 @@ This document defines the contract for an ObservabilityPack: its conceptual mode
 
 ### 1.3 Versioning
 
-The standard itself is unversioned — this document is the current contract. Four independent versioning axes do appear inside the contract and should not be confused with one another:
+This document — the standard itself — carries an explicit **spec version** (see the header table; currently **1.2**), a two-part `major.minor` number: the minor part moves for backward-compatible additions and clarifications, the major part for breaking changes to the contract. The lineage: **1.0** was the generic observability standard; **1.1** added the OpenTelemetry instrumentation contract as a separate concern; **1.2** consolidates the two into this single unified document. Because the consolidation preserves the manifest contract (`apiVersion` stays `observability.platform/v1` and existing packs still validate), it is a backward-compatible minor bump rather than a breaking `2.0`. Beyond the spec version, five independent versioning axes appear inside the contract and should not be confused with one another:
 
-- **`apiVersion: observability.platform/v1`** — the stable API surface for pack manifests, in the Kubernetes-style sense. A breaking change to the manifest shape would bump this to `v2`.
+- **Spec version** (`1.2`) — the version of this prose standard, in the header table. Owned by the platform engineering team. `major.minor`; bumped whenever this document changes.
+- **`apiVersion: observability.platform/v1`** — the stable API surface for pack manifests, in the Kubernetes-style sense. A breaking change to the manifest shape would bump this to `v2`. Tracks the spec's major version but is not identical to it: an editorial spec patch does not move `apiVersion`.
 - **`metadata.version`** on each pack — SemVer per pack instance, owned by the service team. Bumped on every pack change. Unrelated to the spec.
 - **Binding name** (currently `otel-elastic-prometheus-grafana`) — the realisation contract for a specific stack. Future bindings live as separate documents under `bindings/` and do not bump the `apiVersion`.
 - **Backend product versions** — each telemetry backend declares its product version and an optional gating policy (`off` / `warn` / `enforce`). This is a per-backend axis that drives compatibility checking against the platform's capability model, not the pack or spec version. See §5.12.3.

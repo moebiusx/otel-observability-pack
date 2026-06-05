@@ -12,7 +12,8 @@ One service = one pack = one PR to change anything observable about it.
 
 | | |
 |---|---|
-| Author | Carlos (Platform Engineering Lead) & Claude Code - Session ID: |
+| Spec version | 1.2 |
+| Author | Carlos Montero |
 | Status | Draft for review |
 | First publication | 2026-05-08 |
 | Default binding | `otel-elastic-prometheus-grafana` |
@@ -118,24 +119,6 @@ See `spec/ObservabilityPack-Spec.md` for the abstract model and `bindings/otel-e
 
 Full clause-level rubric in `docs/maturity-model.md`.
 
----
-
-## Roadmap
-
-| | |
-|---|---|
-| **Current** | **OTel-native standard with the Prometheus / Elastic / Grafana binding — abstract model, schema, example pack, operator design, maturity model** |
-| v1.2 | Field-feedback revisions after first organisation-wide adoption |
-| v2.0 | Multi-cluster federation, cost-aware retention recommendations, conformance attestation, alternate bindings (`otel-grafanalabs`, `otel-aws-managed`) |
 
 ---
 
-## Bootstrap (first time only)
-
-This folder is laid out by `setup.ps1`. The deliverable files were originally produced on the Desktop. Right-click `setup.ps1` → **Run with PowerShell** to copy them into the right subdirectories. Re-running is safe (it just refreshes).
-
----
-
-## License & ownership
-
-Owned by Platform Engineering. Contributions via pull request; SemVer-bumped on every change; quarterly review cadence.
