@@ -25,8 +25,6 @@ One service = one pack = one PR to change anything observable about it.
 ```
 otel-observability-pack/
 ├── README.md                       <- you are here
-├── setup.ps1                       <- bootstrap script (one-time)
-│
 ├── spec/                           <- the standard itself
 │   └── ObservabilityPack-Spec.md                 (Markdown, renders on GitHub)
 │

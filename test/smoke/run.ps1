@@ -13,10 +13,10 @@
 #      OpenTelemetryCollector objects exist.
 #
 # Usage:
-#   pwsh hack/smoke/run.ps1
-#   pwsh hack/smoke/run.ps1 -Recreate     # tear down + rebuild cluster
-#   pwsh hack/smoke/run.ps1 -KeepCluster  # leave cluster running on failure
-#   pwsh hack/smoke/run.ps1 -Cleanup      # delete the cluster and exit
+#   pwsh test/smoke/run.ps1
+#   pwsh test/smoke/run.ps1 -Recreate     # tear down + rebuild cluster
+#   pwsh test/smoke/run.ps1 -KeepCluster  # leave cluster running on failure
+#   pwsh test/smoke/run.ps1 -Cleanup      # delete the cluster and exit
 [CmdletBinding()]
 param(
     [string]$ClusterName = 'obs-pack-smoke',
@@ -67,7 +67,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "kind load failed" }
 
     Step "Applying tool stand-in CRDs"
-    kubectl --context $kctx apply -f hack/smoke/crds-tools.yaml | Out-Null
+    kubectl --context $kctx apply -f test/smoke/crds-tools.yaml | Out-Null
 
     Step "Applying Pack CRD"
     kubectl --context $kctx apply -f config/crd/bases/observability.platform_packs.yaml | Out-Null
@@ -87,7 +87,7 @@ try {
 
     Step "Generating Pack CR from examples/payment-service.pack.yaml"
     $packCR = Join-Path $env:TEMP 'pack-cr.yaml'
-    go run ./hack/smoke/wrap.go -f examples/payment-service.pack.yaml -name payments -namespace obs -target ske > $packCR
+    go run ./test/smoke/wrap.go -f examples/payment-service.pack.yaml -name payments -namespace obs -target ske > $packCR
     if ($LASTEXITCODE -ne 0) { throw "wrap.go failed" }
     Sub "Wrote $packCR"
 
